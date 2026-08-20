@@ -43,5 +43,5 @@
        IsForceCloseFriday : will trigger the feature if set to true
        Friday No Trade After N Hour: Trader Server Time (UTC+0), will stop if N Hours before 24hour
 
-   
-  
+TRADE AT YOUR OWN RISK
+1. On how to setup this EA, search in google, how to run EA in MT5
