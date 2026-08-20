@@ -370,11 +370,17 @@ void CheckForSignal()
          positionCounter = 0;
          
          if(IsInNoTradeWindow(InpNoTradeStartHour, InpNoTradeEndHour))
-            return;
+            {
+               activePosition = C_None;
+               return;
+            }
 
 
          if(IsInNoTradeWindow(InpNoTradeStartHourNY, InpNoTradeEndHourNY))
-            return;
+            {
+               activePosition = C_None;
+               return;
+            }
       }
       
       
@@ -406,11 +412,17 @@ void CheckForSignal()
          positionCounter = 0;
 
          if(IsInNoTradeWindow(InpNoTradeStartHour, InpNoTradeEndHour))
-            return;
+            {
+               activePosition = C_None;
+               return;
+            }
 
 
          if(IsInNoTradeWindow(InpNoTradeStartHourNY, InpNoTradeEndHourNY))
-            return;
+            {
+               activePosition = C_None;
+               return;
+            }
         }
 
       bool tsell = trade.Sell(positionLotSize, _Symbol);
