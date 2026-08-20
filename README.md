@@ -39,6 +39,10 @@
     
 7. No Trade Rule
    a. You can specify when your bot will stop during specified time
+       Asian/London No Trade Start Hour -> Asian/London No Trade End Hour
+       NY No Trade Start Hour -> NY No Trade End Hour
+        *** make Start hour and End Hour equal if you want to ignore no trade rule
+       
    b. Option to close all position when trading day is friday (configurable)
        IsForceCloseFriday : will trigger the feature if set to true
        Friday No Trade After N Hour: Trader Server Time (UTC+0), will stop if N Hours before 24hour
