@@ -167,10 +167,17 @@ void ManageTrailingStop()
 
          // reset position to 1
          if(IsInNoTradeWindow(InpNoTradeStartHour, InpNoTradeEndHour))
-            return;
+            {
+               activePosition = C_None;
+               return;
+            }
 
          if(IsInNoTradeWindow(InpNoTradeStartHourNY, InpNoTradeEndHourNY))
-            return;
+            {
+               activePosition = C_None;
+               return;
+            }
+
 
          if(activePosition == C_Buy)
            {
