@@ -16,36 +16,50 @@ int ema9Handle;
 int ema21Handle;
 int emaLongHandle;
 
-/* initial parameter */
+input group "===STRATEGY INDICATOR==="
 input int ema9 = 9;                    // Fast EMA (9)
 input int ema21 = 21;                  // Slow EMA (21)
+
+input group "===ADDITIONAL FILTER INDICATOR==="
+input bool includeEMAFilter = false;   // Consider Filter?
 input int emaLong = 50;                // Additional Filter EMA(50 min)
-input bool includeEMAFilter = false;
-input int hourBeforeClosing = 22;      //Friday No Trade After N Hour
+input double rangeFilter = 20;          //Range Filter +/-
 
+input group "===TRADING SETTINGS==="
 input double lotSize = 0.01;           // Initial Lot Size
-int trailingStopPoints = 500;
+input ulong magicNumber = 3197230;     // Magic Number
 
+
+input group "===RISK MANAGEMENT==="
 input double tp5 = 4.0;                // Minimum Secure Profit
-input double trail50 = 50.0;           // Trailing Stop (50%)
+input double tp15 = 8.0;              // First Trailing Profit
+input double tp25 = 25.0;              // Second Trailing Profit
+input double tp35 = 35.0;              // Max Trailing Profit
+input double trail50 = 50.0;           // First Trailing Percentage
+input double trail65 = 70.0;           // Second Trailing Percentage
+input double trail75 = 75.0;           // Third Trailing Percentage
+input double trailfix = 80;            // Max Trailing Percentage
 
-//+------------------------------------------------------------------+
-//|                                                                  |
-//+------------------------------------------------------------------+
-input double tp15 = 8.0;              // Secure Profit (15)
-input double trail65 = 70.0;           // Trailing Stop (65%)
+input group "===TIME MANAGEMENT==="
+input int    InpStartHourShift1 = 1;               //Shift 1 - Start Hour
+input int    InpEndHourShift1 = 1;                 //Shift 1 - End Hour
+input int    InpStartHourShift2 = 1;               //Shift 2 - Start Hour
+input int    InpEndHourShift2 = 1;                 //Shift 2 - End Hour
+input int    InpStartHourShift3 = 1;               //Shift 3 - Start Hour
+input int    InpEndHourShift3 = 1;                 //Shift 3 - End Hour
 
-//+------------------------------------------------------------------+
-//|                                                                  |
-//+------------------------------------------------------------------+
-input double tp25 = 25.0;              // Secure Profit (25)
-input double trail75 = 75.0;           // Trailing Stop (75%)
+//input int    InpNoTradeStartHour = 14;            // Asian/London No-Trade Window Start Hour (in Target GMT Offset below)//
+//input int    InpNoTradeEndHour   = 14;            // Asian/London No-Trade Window End Hour (in Target GMT Offset
+//input int    InpNoTradeStartHourNY = 14;          // NY No-Trade Window Start Hour (in Target GMT Offset below)
+//input int    InpNoTradeEndHourNY   = 14;          // NY No-Trade Window End Hour (in Target GMT Offset
+input int    InpTargetGMTOffset  = 8;             // Target Timezone GMT Offset (e.g. 8 = GMT+8)
+input int    InpBrokerGMTOffset  = 3;             // Broker Server GMT Offset (yours = GMT+3, confirmed from server clock; may shift ±1hr with DST)
+input int hourBeforeClosing = 22;      //Friday No Trade After N Hour
+input bool isForceCloseFriday = false;
 
-//+------------------------------------------------------------------+
-//|                                                                  |
-//+------------------------------------------------------------------+
-input double tp35 = 35.0;              // Secure Profit (35)
-input double trailfix = 80;            // Trailing Stop Max(80%)
+int InpLotSizeDiffStartHour = 4;            // Start Hour Increment Lot Size
+int InpLotSizeDiffEndHour = 1;              // End Hour Increment Lot Size
+double multiplierDiffLotSize = 1.0;          // Increment Lot Size Multiplier
 
 datetime lastBarTime = 0;
 
@@ -55,31 +69,6 @@ enum CurrentPosition
    Buy,
    Sell
   };
-
-
-//+------------------------------------------------------------------+
-//|                                                                  |
-//+------------------------------------------------------------------+
-input int    InpNoTradeStartHour = 14;            // Asian/London No-Trade Window Start Hour (in Target GMT Offset below)
-input int    InpNoTradeEndHour   = 14;            // Asian/London No-Trade Window End Hour (in Target GMT Offset
-
-//+------------------------------------------------------------------+
-//|                                                                  |
-//+------------------------------------------------------------------+
-input int    InpNoTradeStartHourNY = 14;          // NY No-Trade Window Start Hour (in Target GMT Offset below)
-input int    InpNoTradeEndHourNY   = 14;          // NY No-Trade Window End Hour (in Target GMT Offset
-
-//+------------------------------------------------------------------+
-//|                                                                  |
-//+------------------------------------------------------------------+
-input int    InpTargetGMTOffset  = 8;             // Target Timezone GMT Offset (e.g. 8 = GMT+8)
-input int    InpBrokerGMTOffset  = 3;             // Broker Server GMT Offset (yours = GMT+3, confirmed from server clock; may shift ±1hr with DST)
-
-input int InpLotSizeDiffStartHour = 4;            // Start Hour Increment Lot Size
-input int InpLotSizeDiffEndHour = 10;              // End Hour Increment Lot Size
-input double multiplierDiffLotSize = 2.0;          // Increment Lot Size Multiplier
-
-input ulong magicNumber = 3197230;  //Random Magic Number/Key
 
 //+------------------------------------------------------------------+
 //|                                                                  |
@@ -121,13 +110,16 @@ void OnDeinit(const int reason)
 void OnTick()
   {
    
-   if (IsFridayLastNHours())
+   if (isForceCloseFriday)
    {
-      if (HasOpenPositionByMagic())
+      if (IsFridayLastNHours())
       {
-         CloseAllPositions();
+         if (HasOpenPositionByMagic())
+         {
+            CloseAllPositions();
+         }
+         return;
       }
-      return;
    }
 
    ManageTrailingStop();
@@ -214,9 +206,35 @@ void CheckForSignal()
 
    bool buySignal = fastEMA[0] > slowEMA[0];
    bool sellSignal = fastEMA[0] < slowEMA[0];
-   bool isBuyBias = fastEMA[0] > longEMA[0];
-   bool isSellBias = longEMA[0] > slowEMA[0];
-  
+   
+   double askPrice = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+   double bidPrice = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   
+   bool isBuyBias = false;
+   bool isSellBias = false;
+   
+   
+   
+   if (buySignal)
+   {
+      isBuyBias = askPrice - longEMA[0] < rangeFilter && askPrice > longEMA[0]; 
+   }
+   if (sellSignal)
+   {
+
+      isSellBias = longEMA[0] - bidPrice < rangeFilter && bidPrice < longEMA[0];
+   }
+   
+   /*** log mode***/
+   Print("-----------------------------");
+   Print("BuySignal: " + buySignal);
+   Print("sellSignal: " + sellSignal);
+   Print("isBuyBias: " + isBuyBias);
+   Print("isSellBias: " + isSellBias);
+   PrintFormat("ask=%.2f | bid=%.2f | LongEMA=%.2f", askPrice, bidPrice, longEMA[0]);
+   Print("-----------------------------");
+ 
+
    if (!includeEMAFilter)
    {
       isBuyBias = true;
@@ -244,12 +262,8 @@ void CheckForSignal()
             return;
            }
         }
-
-      if(IsInNoTradeWindow(InpNoTradeStartHour, InpNoTradeEndHour))
-         return;
-
-
-      if(IsInNoTradeWindow(InpNoTradeStartHourNY, InpNoTradeEndHourNY))
+        
+      if (!IsInTradeSchedule())
          return;
       
       if (!isBuyBias)
@@ -284,14 +298,11 @@ void CheckForSignal()
             return;
            }
         }
-
-      if(IsInNoTradeWindow(InpNoTradeStartHour, InpNoTradeEndHour))
+        
+      if (!IsInTradeSchedule())
          return;
 
-      if(IsInNoTradeWindow(InpNoTradeStartHourNY, InpNoTradeEndHourNY))
-         return;
-      
-      if (isBuyBias)
+      if (!isSellBias)
          return;
 
       bool sell = trade.Sell(positionLotSize, _Symbol);
@@ -404,15 +415,36 @@ void ManageTrailingStop()
         }
   }
 
+bool IsInTradeSchedule()
+{
+   //will ignore checking if start and end are equal
+   bool isInSched = false;
+   
+   if (InpStartHourShift1 != InpEndHourShift1)
+      if(IsInTradeWindow(InpStartHourShift1, InpEndHourShift1))
+         isInSched = true;
+
+   if (InpStartHourShift2 != InpEndHourShift2)
+      if(!IsInTradeWindow(InpStartHourShift2, InpEndHourShift2))
+         isInSched = true;
+   
+   if (InpStartHourShift3 != InpEndHourShift3)
+      if(!IsInTradeWindow(InpStartHourShift3, InpEndHourShift3))
+         isInSched = true;
+      
+   return isInSched;
+}
+
 //+------------------------------------------------------------------+
 //|                                                                  |
 //+------------------------------------------------------------------+
+/*
 bool IsInNoTradeWindow(int iNoTradeStart, int iNoTradeEnd)
   {
    MqlDateTime dt;
    TimeToStruct(TimeTradeServer(), dt);
 
-// Convert broker server hour -> target timezone hour (e.g. GMT+8)
+   // Convert broker server hour -> target timezone hour (e.g. GMT+8)
    int hour = dt.hour + (InpTargetGMTOffset - InpBrokerGMTOffset);
    hour = ((hour % 24) + 24) % 24; // normalize into 0-23
 
@@ -424,6 +456,27 @@ bool IsInNoTradeWindow(int iNoTradeStart, int iNoTradeEnd)
    else
       // window wraps past midnight, e.g. 22 -> 2
       return (hour >= iNoTradeStart || hour < iNoTradeEnd);
+  }
+*/
+
+bool IsInTradeWindow(int iTradeStart, int iTradeEnd)
+  {
+   MqlDateTime dt;
+   TimeToStruct(TimeTradeServer(), dt);
+
+// Convert broker server hour -> target timezone hour (e.g. GMT+8)
+   int hour = dt.hour + (InpTargetGMTOffset - InpBrokerGMTOffset);
+   hour = ((hour % 24) + 24) % 24; // normalize into 0-23
+
+   // will consider 24/7 if tradestart and tradeend is equal
+   if(iTradeStart == iTradeEnd)
+      return true; 
+      
+   if(iTradeStart < iTradeEnd)
+      return (hour >= iTradeStart && hour <= iTradeEnd);
+   else
+      // window wraps past midnight, e.g. 22 -> 2
+      return (hour >= iTradeStart || hour <= iTradeEnd);
   }
 
 
