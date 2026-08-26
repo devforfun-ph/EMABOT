@@ -37,11 +37,9 @@
     Broker Server GMT: Your broker server GMT
 
     
-7. No Trade Rule
-   a. You can specify when your bot will stop during specified time
-       Asian/London No Trade Start Hour -> Asian/London No Trade End Hour
-       NY No Trade Start Hour -> NY No Trade End Hour
-        *** make Start hour and End Hour equal if you want to ignore no trade rule
+7. Trade Schedule
+   a. You can specify when your bot will run, divided on 3 shift, if both start and end are equal, it will just ignore the setting thus if all values are equal, no bot wont run as there where no schedule define
+        *** make Start hour and End Hour equal if you want to ignore 
        
    b. Option to close all position when trading day is friday (configurable)
        IsForceCloseFriday : will trigger the feature if set to true
