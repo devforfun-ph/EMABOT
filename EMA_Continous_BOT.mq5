@@ -212,9 +212,7 @@ void CheckForSignal()
    
    bool isBuyBias = false;
    bool isSellBias = false;
-   
-   
-   
+  
    if (buySignal)
    {
       isBuyBias = askPrice - longEMA[0] < rangeFilter && askPrice > longEMA[0]; 
@@ -425,15 +423,34 @@ bool IsInTradeSchedule()
          isInSched = true;
 
    if (InpStartHourShift2 != InpEndHourShift2)
-      if(!IsInTradeWindow(InpStartHourShift2, InpEndHourShift2))
+      if(IsInTradeWindow(InpStartHourShift2, InpEndHourShift2))
          isInSched = true;
    
    if (InpStartHourShift3 != InpEndHourShift3)
-      if(!IsInTradeWindow(InpStartHourShift3, InpEndHourShift3))
+      if(IsInTradeWindow(InpStartHourShift3, InpEndHourShift3))
          isInSched = true;
-      
+   Print("Trade Schedule: " + isInSched);
    return isInSched;
 }
+bool IsInTradeWindow(int iTradeStart, int iTradeEnd)
+  {
+   MqlDateTime dt;
+   TimeToStruct(TimeTradeServer(), dt);
+
+// Convert broker server hour -> target timezone hour (e.g. GMT+8)
+   int hour = dt.hour + (InpTargetGMTOffset - InpBrokerGMTOffset);
+   hour = ((hour % 24) + 24) % 24; // normalize into 0-23
+
+   // will consider 24/7 if tradestart and tradeend is equal
+   if(iTradeStart == iTradeEnd)
+      return true; 
+      
+   if(iTradeStart < iTradeEnd)
+      return (hour >= iTradeStart && hour <= iTradeEnd);
+   else
+      // window wraps past midnight, e.g. 22 -> 2
+      return (hour >= iTradeStart || hour <= iTradeEnd);
+  }
 
 //+------------------------------------------------------------------+
 //|                                                                  |
@@ -459,25 +476,6 @@ bool IsInNoTradeWindow(int iNoTradeStart, int iNoTradeEnd)
   }
 */
 
-bool IsInTradeWindow(int iTradeStart, int iTradeEnd)
-  {
-   MqlDateTime dt;
-   TimeToStruct(TimeTradeServer(), dt);
-
-// Convert broker server hour -> target timezone hour (e.g. GMT+8)
-   int hour = dt.hour + (InpTargetGMTOffset - InpBrokerGMTOffset);
-   hour = ((hour % 24) + 24) % 24; // normalize into 0-23
-
-   // will consider 24/7 if tradestart and tradeend is equal
-   if(iTradeStart == iTradeEnd)
-      return true; 
-      
-   if(iTradeStart < iTradeEnd)
-      return (hour >= iTradeStart && hour <= iTradeEnd);
-   else
-      // window wraps past midnight, e.g. 22 -> 2
-      return (hour >= iTradeStart || hour <= iTradeEnd);
-  }
 
 
 //+------------------------------------------------------------------+
