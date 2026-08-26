@@ -42,10 +42,13 @@ input double trailPercentC = 80;                   //Max Trailing Percentage
 
 
 input group "=== TRADING HOUR ==="
-input int    InpNoTradeStartHour = 19;            // Asian/London No-Trade Start Hour (in Target GMT Offset below)
-input int    InpNoTradeEndHour   = 6;            // Asian/London No-Trade End Hour (in Target GMT Offset
-input int    InpNoTradeStartHourNY = 19;          // NY No-Trade Start Hour (in Target GMT Offset below)
-input int    InpNoTradeEndHourNY   = 6;          // NY No-Trade End Hour (in Target GMT Offset
+input int    InpStartHourShift1 = 1;               //Shift 1 - Start Hour
+input int    InpEndHourShift1 = 1;                 //Shift 1 - End Hour
+input int    InpStartHourShift2 = 1;               //Shift 2 - Start Hour
+input int    InpEndHourShift2 = 1;                 //Shift 2 - End Hour
+input int    InpStartHourShift3 = 1;               //Shift 3 - Start Hour
+input int    InpEndHourShift3 = 1;                 //Shift 3 - End Hour
+
 input int    InpTargetGMTOffset  = 8;             // Target Timezone GMT Offset (e.g. 8 = GMT+8)
 input int    InpBrokerGMTOffset  = 3;             // Broker Server GMT Offset (yours = GMT+3, confirmed from server clock; may shift ±1hr with DST)
 
@@ -165,19 +168,12 @@ void ManageTrailingStop()
         {
          CloseAllPositions();
 
-         // reset position to 1
-         if(IsInNoTradeWindow(InpNoTradeStartHour, InpNoTradeEndHour))
-            {
+         if (!IsInTradeSchedule())
+         {
                activePosition = C_None;
-               return;
-            }
-
-         if(IsInNoTradeWindow(InpNoTradeStartHourNY, InpNoTradeEndHourNY))
-            {
-               activePosition = C_None;
-               return;
-            }
-
+               return; 
+         }
+         
 
          if(activePosition == C_Buy)
            {
@@ -335,11 +331,18 @@ void CheckForSignal()
    bool sellSignal = false;
    bool isBuyBias = true;
    bool isSellBias = true;
+   
+   bool isBuyBiasOrig = true;
+   bool isSellBiasOrig = true;
+   
    double usedMargin = 0;
    
    if(!GetEmaCrossC(buySignal, sellSignal, isBuyBias, isSellBias))
       return;
-
+      
+   isBuyBiasOrig = isBuyBias;
+   isSellBiasOrig = isSellBias;
+   
    double positionLotSize = lotSize;
    
    // if hit by secure profit double check activePosition
@@ -354,6 +357,13 @@ void CheckForSignal()
       activePosition = C_None;
    }
    
+   //ignore filter if has existing position
+   if (hasPosition)
+   {
+      isBuyBias = true;
+      isSellBias = true;
+   }
+   
    Print("------------");
    Print ("Has Position: " + hasPosition);
    Print("Active Position: " + activePosition);
@@ -363,6 +373,7 @@ void CheckForSignal()
    Print("SellBias: " + isSellBias);
    Print("------------");
    // BUY Signal
+   
    if(buySignal && activePosition != C_Buy && isBuyBias)
      {
       if(hasPosition)
@@ -373,22 +384,18 @@ void CheckForSignal()
 
       if(positionLotSize == lotSize)
       {
-         
          positionCounter = 0;
          
-         if(IsInNoTradeWindow(InpNoTradeStartHour, InpNoTradeEndHour))
-            {
+         //check if bias original is true before reset
+         if (!isBuyBiasOrig)
+            return;
+        
+         if (!IsInTradeSchedule())
+         {
                activePosition = C_None;
-               return;
-            }
-
-
-         if(IsInNoTradeWindow(InpNoTradeStartHourNY, InpNoTradeEndHourNY))
-            {
-               activePosition = C_None;
-               return;
-            }
-      }
+               return; 
+         }
+      } 
       
       
       bool tbuy = trade.Buy(positionLotSize, _Symbol);
@@ -417,18 +424,15 @@ void CheckForSignal()
       if(positionLotSize == lotSize)
         {
          positionCounter = 0;
-
-         if(IsInNoTradeWindow(InpNoTradeStartHour, InpNoTradeEndHour))
+         
+         //check if bias original is true before reset
+         if (!isSellBiasOrig)
+            return;
+            
+         if (!IsInTradeSchedule())
             {
                activePosition = C_None;
-               return;
-            }
-
-
-         if(IsInNoTradeWindow(InpNoTradeStartHourNY, InpNoTradeEndHourNY))
-            {
-               activePosition = C_None;
-               return;
+               return; 
             }
         }
 
@@ -623,9 +627,11 @@ bool HasOpenPositionByMagic()
 
    return false;
   }
+  
 //+------------------------------------------------------------------+
 //|                                                                  |
 //+------------------------------------------------------------------+
+/*
 bool IsInNoTradeWindow(int iNoTradeStart, int iNoTradeEnd)
   {
    MqlDateTime dt;
@@ -644,7 +650,7 @@ bool IsInNoTradeWindow(int iNoTradeStart, int iNoTradeEnd)
       // window wraps past midnight, e.g. 22 -> 2
       return (hour >= iNoTradeStart || hour < iNoTradeEnd);
   }
-
+*/
 //+------------------------------------------------------------------+
 //|                                                                  |
 //+------------------------------------------------------------------+
@@ -708,3 +714,50 @@ bool IsFridayLastNHours()
 
    return false;
 }
+
+bool IsInTradeSchedule()
+{
+   //will ignore checking if start and end are equal
+   bool isInSched = false;
+   
+   if (InpStartHourShift1 != InpEndHourShift1)
+      if(IsInTradeWindow(InpStartHourShift1, InpEndHourShift1))
+      {
+         isInSched = true;
+         Print("Shift 1 Schedule");
+      }
+   if (InpStartHourShift2 != InpEndHourShift2)
+      if(IsInTradeWindow(InpStartHourShift2, InpEndHourShift2))
+      {
+         isInSched = true;
+         Print("Shift 2 Schedule");
+      }
+   
+   if (InpStartHourShift3 != InpEndHourShift3)
+      if(IsInTradeWindow(InpStartHourShift3, InpEndHourShift3))
+      {
+         isInSched = true;
+         Print("Shift 3 Schedule");
+      }
+
+   return isInSched;
+}
+bool IsInTradeWindow(int iTradeStart, int iTradeEnd)
+  {
+   MqlDateTime dt;
+   TimeToStruct(TimeTradeServer(), dt);
+
+// Convert broker server hour -> target timezone hour (e.g. GMT+8)
+   int hour = dt.hour + (InpTargetGMTOffset - InpBrokerGMTOffset);
+   hour = ((hour % 24) + 24) % 24; // normalize into 0-23
+
+   // will consider 24/7 if tradestart and tradeend is equal
+   if(iTradeStart == iTradeEnd)
+      return true; 
+      
+   if(iTradeStart < iTradeEnd)
+      return (hour >= iTradeStart && hour <= iTradeEnd);
+   else
+      // window wraps past midnight, e.g. 22 -> 2
+      return (hour >= iTradeStart || hour <= iTradeEnd);
+  }
