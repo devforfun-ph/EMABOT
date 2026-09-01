@@ -174,6 +174,12 @@ void ManageTrailingStop()
                return; 
          }
          
+         if (includeEMAFilter)
+         {
+            CheckForSignal();
+            return;
+         }
+         
 
          if(activePosition == C_Buy)
            {
@@ -574,6 +580,8 @@ void CloseAllPositions()
          trade.PositionClose(ticket);
         }
      }
+     
+     positionCounter = 0;
  }
  
 //+------------------------------------------------------------------+
@@ -756,8 +764,8 @@ bool IsInTradeWindow(int iTradeStart, int iTradeEnd)
       return true; 
       
    if(iTradeStart < iTradeEnd)
-      return (hour >= iTradeStart && hour <= iTradeEnd);
+      return (hour >= iTradeStart && hour < iTradeEnd);
    else
       // window wraps past midnight, e.g. 22 -> 2
-      return (hour >= iTradeStart || hour <= iTradeEnd);
+      return (hour >= iTradeStart || hour < iTradeEnd);
   }
