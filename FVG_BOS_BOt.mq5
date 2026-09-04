@@ -16,7 +16,8 @@ input double lotSize = 0.2;               // Initial Lot Size
 input ulong magicNumber = 98765;          //Random Magic Number/Key
 
 input group "=== DCA SETTINGS ==="
-input double addLotSize = 0.2;              // DCA Cover 
+input double addLotSize = 0.1;              // DCA Cover 
+input bool useLotSize = false;                    // Use DCA Setting Lot Size
 input double lostProfitThreshold = 50;     // Profit Threshold
 
 
@@ -53,9 +54,7 @@ input int SwingStrength = 2;                    //Candle (min 2)
 input int LookbackBars  = 100;                  //Lookback Bars
 input double MinFVGPoints = 100;                //Min FVG Gap Price
 input bool DrawBOS = true;                      //Check BOS
-input bool DrawFVG = true;                      // Check FVG
-
-
+input bool withRetracement = true;              //With Retracement
 //-------------------------------------------------------------------
 // Market structure
 //-------------------------------------------------------------------
@@ -303,64 +302,6 @@ bool FindBearishFVG(FVGData &fvg)
 
 
 //+------------------------------------------------------------------+
-//| Draw FVG                                                          |
-//+------------------------------------------------------------------+
-
-void DrawFVGZone(FVGData &fvg)
-{
-   if(!DrawFVG)
-      return;
-
-   string name =
-      "FVG_" +
-      IntegerToString((long)fvg.time);
-
-
-   datetime time1 = fvg.time;
-
-   datetime time2 =
-      time1 + PeriodSeconds(StructureTF) * 20;
-
-
-   if(ObjectFind(0, name) >= 0)
-      ObjectDelete(0, name);
-
-
-   ObjectCreate(
-      0,
-      name,
-      OBJ_RECTANGLE,
-      0,
-      time1,
-      fvg.high,
-      time2,
-      fvg.low
-   );
-
-
-   ObjectSetInteger(
-      0,
-      name,
-      OBJPROP_FILL,
-      true
-   );
-
-   ObjectSetInteger(
-      0,
-      name,
-      OBJPROP_BACK,
-      true
-   );
-
-   ObjectSetInteger(
-      0,
-      name,
-      OBJPROP_SELECTABLE,
-      false
-   );
-}
-
-//+------------------------------------------------------------------+
 //| Check if price entered FVG                                       |
 //+------------------------------------------------------------------+
 
@@ -419,55 +360,6 @@ bool PriceEnteredFVG()
 //| Process FVG after BOS                                            |
 //+------------------------------------------------------------------+
 
-void ProcessFVG()
-{
-   FVGData fvg;
-
-
-   // ---------------------------------------------------------------
-   // Bullish BOS -> Bullish FVG
-   // ---------------------------------------------------------------
-
-   if(BullishBOSDetected)
-   {
-      if(FindBullishFVG(fvg))
-      {
-         CurrentFVG = fvg;
-
-         DrawFVGZone(CurrentFVG);
-
-         Print(
-            "Bullish FVG detected | High = ",
-            CurrentFVG.high,
-            " | Low = ",
-            CurrentFVG.low
-         );
-      }
-   }
-
-
-   // ---------------------------------------------------------------
-   // Bearish BOS -> Bearish FVG
-   // ---------------------------------------------------------------
-
-   if(BearishBOSDetected)
-   {
-      if(FindBearishFVG(fvg))
-      {
-         CurrentFVG = fvg;
-
-         DrawFVGZone(CurrentFVG);
-
-         Print(
-            "Bearish FVG detected | High = ",
-            CurrentFVG.high,
-            " | Low = ",
-            CurrentFVG.low
-         );
-      }
-   }
-}
-
 void CheckBOS()
 {
    MqlRates rates[2];
@@ -499,11 +391,7 @@ void CheckBOS()
 
       EntryTriggered = false;
 
-      Print(
-         "BULLISH BOS",
-         " | Close=", candle.close,
-         " | Broken High=", LastSwingHigh
-      );
+      //Print("BULLISH BOS"," | Close=", candle.close," | Broken High=", LastSwingHigh);
 
       return;
    }
@@ -526,11 +414,7 @@ void CheckBOS()
 
       EntryTriggered = false;
 
-      Print(
-         "BEARISH BOS",
-         " | Close=", candle.close,
-         " | Broken Low=", LastSwingLow
-      );
+      //Print("BEARISH BOS"," | Close=", candle.close," | Broken Low=", LastSwingLow);
 
       return;
    }
@@ -550,10 +434,10 @@ bool FindBullishFVGAfterBOS()
    // rates[1] = middle candle
    // rates[2] = oldest candle
 
-
-   // FVG must occur after BOS
-   if(rates[1].time <= BOS_Time)
-      return false;
+   if (DrawBOS)
+      // FVG must occur after BOS
+      if(rates[1].time <= BOS_Time)
+         return false;
 
 
    // Bullish FVG
@@ -580,11 +464,7 @@ bool FindBullishFVGAfterBOS()
 
       FVG_Time = rates[1].time;
 
-      Print(
-         "BULLISH FVG detected",
-         " | High=", FVG_High,
-         " | Low=", FVG_Low
-      );
+      //Print("BULLISH FVG detected"," | High=", FVG_High," | Low=", FVG_Low);
 
       return true;
    }
@@ -624,11 +504,7 @@ bool FindBearishFVGAfterBOS()
 
       FVG_Time = rates[1].time;
 
-      Print(
-         "BEARISH FVG detected",
-         " | High=", FVG_High,
-         " | Low=", FVG_Low
-      );
+      //Print("BEARISH FVG detected"," | High=", FVG_High," | Low=", FVG_Low);
 
       return true;
    }
@@ -641,37 +517,31 @@ void ProcessSetup()
    // ------------------------------------------------------------
    // BOS → WAIT FOR BULLISH FVG
    // ------------------------------------------------------------
-
-   if(CurrentSetup == WAIT_FVG_BULLISH)
+   if (DrawBOS)
    {
-      if(FindBullishFVGAfterBOS())
+      if(CurrentSetup == SETUP_NONE)
       {
-         CurrentSetup = WAIT_RETRACEMENT_BULLISH;
-
-         Print(
-            "BULLISH FVG confirmed.",
-            " Waiting for retracement."
-         );
+         if(FindBullishFVGAfterBOS())
+         {
+            CurrentSetup = WAIT_RETRACEMENT_BULLISH;
+   
+            Print("BULLISH FVG confirmed."," Waiting for retracement.");
+         }
+      }
+   }
+   else
+   {
+      if(CurrentSetup == SETUP_NONE)
+      {
+         if(FindBullishFVGAfterBOS())
+         {
+            CurrentSetup = WAIT_RETRACEMENT_BULLISH;
+   
+            Print("BULLISH FVG confirmed."," Waiting for retracement.");
+         }
       }
    }
 
-
-   // ------------------------------------------------------------
-   // BOS → WAIT FOR BEARISH FVG
-   // ------------------------------------------------------------
-
-   if(CurrentSetup == WAIT_FVG_BEARISH)
-   {
-      if(FindBearishFVGAfterBOS())
-      {
-         CurrentSetup = WAIT_RETRACEMENT_BEARISH;
-
-         Print(
-            "BEARISH FVG confirmed.",
-            " Waiting for retracement."
-         );
-      }
-   }
 }
 
 bool PriceRetracedIntoFVG()
@@ -787,7 +657,7 @@ int OnInit()
    FindMarketStructure();
       
    trade.SetExpertMagicNumber(magicNumber);
-   
+ 
    return(INIT_SUCCEEDED);
 
   }
@@ -796,9 +666,10 @@ void CheckEntry()
 {
    if(EntryTriggered)
       return;
-
-   if(!PriceRetracedIntoFVG())
-      return;
+   
+   if (withRetracement)
+      if(!PriceRetracedIntoFVG())
+         return;
 
    if(HasOpenPositionByMagic())
       return;
@@ -811,14 +682,10 @@ void CheckEntry()
 
    if(CurrentSetup == WAIT_RETRACEMENT_BULLISH)
    {
-      Print(
-         "BUY ENTRY SIGNAL",
-         " | Price retraced into Bullish FVG",
-         " | FVG Low=", FVG_Low,
-         " | FVG High=", FVG_High
-      );
-      
+
       bool tbuy = trade.Buy(lotSize, _Symbol);
+      
+      Print("LOG: BUY ENTRY SIGNAL"," | Price retraced into Bullish FVG"," | FVG Low=", FVG_Low," | FVG High=", FVG_High," | Created Price=", trade.ResultPrice());
       
       EntryTriggered = true;
 
@@ -915,6 +782,7 @@ void AddNewPosition()
    double lossProfit = lostProfitThreshold * -1;
    int ctr = 0;
    double newLotSize = lotSize;
+   string logProfit = "= ";
    
    for(int i = PositionsTotal() - 1; i >= 0; i--)
    {
@@ -925,8 +793,9 @@ void AddNewPosition()
 
       if(PositionGetInteger(POSITION_MAGIC) == magicNumber)
       {
-         profit = PositionGetDouble(POSITION_PROFIT);
+         profit = PositionGetDouble(POSITION_PROFIT);       
          ctr++;
+         logProfit = logProfit + profit + ", =";
          if (profit >= lossProfit)
          {
             isLatestLossThreshold = false;
@@ -936,10 +805,15 @@ void AddNewPosition()
    
    if (isLatestLossThreshold)
    {
-      newLotSize = newLotSize * ctr;
+   
+      newLotSize = newLotSize * (ctr +1);
+      if (useLotSize) 
+      {
+         newLotSize = addLotSize;
+      }
       bool tbuy = trade.Buy(newLotSize, _Symbol);
       
-      Print("Created DCA Position");
+      Print("LOG: Created DCA Position at Price: ", trade.ResultPrice(), "| Last Profit Detected: ", logProfit);
    }
 }
 
@@ -989,6 +863,8 @@ void ManageTrailingStop()
    {
       // close all position and wait for next entry
       CloseAllPositions();
+      bool tbuy = trade.Buy(lotSize, _Symbol);
+      Print("LOG: BUY ENTRY SIGNAL FOR BREAKEVEN: ", trade.ResultPrice());
    }
    else if (totalProfit < tpMin)
    {
@@ -1040,7 +916,13 @@ void ManageTrailingStop()
 
    double priceDistance =
       (profitToGiveBack / (tickValue * volume)) * tickSize;
-
+      
+   Print ("TV: ", tickValue, " Vol: ", volume, " TS: ", tickSize, " profitToGiveBack: ", profitToGiveBack, " priceDistance: ", priceDistance);
+   
+   priceDistance = profitToGiveBack / volume;
+   
+   Print ("TV: ", tickValue, " Vol: ", volume, " TS: ", tickSize, " profitToGiveBack: ", profitToGiveBack, " priceDistance: ", priceDistance);
+   
    double newSL;
 
    if(type == POSITION_TYPE_BUY)
@@ -1100,8 +982,8 @@ void OnTick()
       // ---------------------------------------------------------
       // Check BOS
       // ---------------------------------------------------------
-
-      CheckBOS();
+      if (DrawBOS)
+         CheckBOS();
 
 
       // ---------------------------------------------------------
