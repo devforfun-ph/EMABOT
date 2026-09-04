@@ -23,7 +23,7 @@ input int emaLong = 50;                // Additional Filter EMA(50 min)
 input int rangeFilter = 20;      //Range/Zone +/- for Filter
 
 input group "=== TRADING SETTINGS ==="
-input double lotSize = 0.1;           // Initial Lot Size
+input double initLotSize = 0.1;           // Initial Lot Size
 input int roundSize = 1;              // Round off
 input string multiplierList = "2,1.9,1.8,1.7,1.6,1.5,1.4,1.3,1.2,1";         //Multiplier List
 input bool isContinous = false; // Continue Trading if Secure Profit Hit?
@@ -55,6 +55,22 @@ input int    InpBrokerGMTOffset  = 3;             // Broker Server GMT Offset (y
 input int hourBeforeClosing = 22;      //Friday No Trade After N Hour
 input bool isForceCloseFriday = false;
 
+input group "=== WITH NEWS SETTING ==="
+input int    InpStartHourShift1News = 1;               //Shift 1 - Start Hour
+input int    InpEndHourShift1News = 1;                 //Shift 1 - End Hour
+input int    InpStartHourShift2News = 1;               //Shift 2 - Start Hour
+input int    InpEndHourShift2News = 1;                 //Shift 2 - End Hour
+input int    InpStartHourShift3News = 1;               //Shift 3 - Start Hour
+input int    InpEndHourShift3News = 1;                 //Shift 3 - End Hour
+input double newsLotSize = 0.1;                         //Lot Size w/ News
+
+input int          InpNewsTradeYear   = 2026;
+input int          InpNewsTradeMonth  = 9;
+input string       InpNewsTradeDays   = "5,10,15,25";
+
+bool g_isNewsDay = false;
+datetime g_lastDateTradeCheck = 0;
+
 
 
 // Indicator Handles
@@ -63,7 +79,7 @@ int ema21Handle;
 int emaLongHandle;
 
 datetime lastBarTime = 0;
-
+double lotSize = 0;
 int positionCounter = 0;
 int lenMultiplier = 0;
 double arrMultiplier[];
@@ -134,6 +150,7 @@ void OnDeinit(const int reason)
 //+------------------------------------------------------------------+
 void OnTick()
   {
+  
    if (isForceCloseFriday)
    {
       if (IsFridayLastNHours())
@@ -146,6 +163,13 @@ void OnTick()
       }
    }
    
+   CheckNewsDay();
+   
+   if (g_isNewsDay)
+      lotSize = newsLotSize;
+   else
+      lotSize = initLotSize;
+      
    ManageTrailingStop();
 
    if(IsNewBar())
@@ -153,6 +177,7 @@ void OnTick()
       CheckForSignal();
      }
   }
+ 
   
 //+------------------------------------------------------------------+
 //|                                                                  |
@@ -167,20 +192,20 @@ void ManageTrailingStop()
       if(GetTotalProfitByMagic() > tpMin)
         {
          CloseAllPositions();
-
+         
+         if (includeEMAFilter)
+         {
+            //check if still in range
+            activePosition = C_None;
+            return; 
+         }
          if (!IsInTradeSchedule())
          {
                activePosition = C_None;
                return; 
          }
          
-         if (includeEMAFilter)
-         {
-            CheckForSignal();
-            return;
-         }
          
-
          if(activePosition == C_Buy)
            {
             if(trade.Buy(lotSize, _Symbol))
@@ -580,8 +605,6 @@ void CloseAllPositions()
          trade.PositionClose(ticket);
         }
      }
-     
-     positionCounter = 0;
  }
  
 //+------------------------------------------------------------------+
@@ -659,6 +682,31 @@ bool IsInNoTradeWindow(int iNoTradeStart, int iNoTradeEnd)
       return (hour >= iNoTradeStart || hour < iNoTradeEnd);
   }
 */
+
+double GetBiggestLotSizeByMagic()
+{
+   double biggestLot = 0.0;
+
+   for(int i = 0; i < PositionsTotal(); i++)
+   {
+      ulong ticket = PositionGetTicket(i);
+
+      if(ticket == 0)
+         continue;
+
+      // Check magic number
+      if(PositionGetInteger(POSITION_MAGIC) != magicNumber)
+         continue;
+
+      double lSize = PositionGetDouble(POSITION_VOLUME);
+
+      if(lSize > biggestLot)
+         biggestLot = lSize;
+   }
+
+   return biggestLot;
+}
+
 //+------------------------------------------------------------------+
 //|                                                                  |
 //+------------------------------------------------------------------+
@@ -684,6 +732,9 @@ double GetLotSize()
 
       else
         {
+         // to ensure if position still exits
+         currentLotSize = GetBiggestLotSizeByMagic();
+           
          if(positionCounter <= ArraySize(arrMultiplier))
            {
             multiplier =  arrMultiplier[positionCounter-1];
@@ -727,27 +778,50 @@ bool IsInTradeSchedule()
 {
    //will ignore checking if start and end are equal
    bool isInSched = false;
-   
-   if (InpStartHourShift1 != InpEndHourShift1)
-      if(IsInTradeWindow(InpStartHourShift1, InpEndHourShift1))
-      {
-         isInSched = true;
-         Print("Shift 1 Schedule");
-      }
-   if (InpStartHourShift2 != InpEndHourShift2)
-      if(IsInTradeWindow(InpStartHourShift2, InpEndHourShift2))
-      {
-         isInSched = true;
-         Print("Shift 2 Schedule");
-      }
-   
-   if (InpStartHourShift3 != InpEndHourShift3)
-      if(IsInTradeWindow(InpStartHourShift3, InpEndHourShift3))
-      {
-         isInSched = true;
-         Print("Shift 3 Schedule");
-      }
-
+   if (g_isNewsDay)
+   {
+      if (InpStartHourShift1News != InpEndHourShift1News)
+         if(IsInTradeWindow(InpStartHourShift1News, InpEndHourShift1News))
+         {
+            isInSched = true;
+            Print("Shift 1 Schedule News");
+         }
+      if (InpStartHourShift2News != InpEndHourShift2News)
+         if(IsInTradeWindow(InpStartHourShift2News, InpEndHourShift2News))
+         {
+            isInSched = true;
+            Print("Shift 2 Schedule News");
+         }
+      
+      if (InpStartHourShift3News != InpEndHourShift3News)
+         if(IsInTradeWindow(InpStartHourShift3News, InpEndHourShift3News))
+         {
+            isInSched = true;
+            Print("Shift 3 Schedule News");
+         }
+   }
+   else
+   {
+      if (InpStartHourShift1 != InpEndHourShift1)
+         if(IsInTradeWindow(InpStartHourShift1, InpEndHourShift1))
+         {
+            isInSched = true;
+            Print("Shift 1 Schedule");
+         }
+      if (InpStartHourShift2 != InpEndHourShift2)
+         if(IsInTradeWindow(InpStartHourShift2, InpEndHourShift2))
+         {
+            isInSched = true;
+            Print("Shift 2 Schedule");
+         }
+      
+      if (InpStartHourShift3 != InpEndHourShift3)
+         if(IsInTradeWindow(InpStartHourShift3, InpEndHourShift3))
+         {
+            isInSched = true;
+            Print("Shift 3 Schedule");
+         }
+   }
    return isInSched;
 }
 bool IsInTradeWindow(int iTradeStart, int iTradeEnd)
@@ -769,3 +843,58 @@ bool IsInTradeWindow(int iTradeStart, int iTradeEnd)
       // window wraps past midnight, e.g. 22 -> 2
       return (hour >= iTradeStart || hour < iTradeEnd);
   }
+
+void CheckNewsDay()
+{
+   datetime currentTime = TimeCurrent();
+
+   // Get the beginning of the current 15-minute period
+   datetime currentPeriod = currentTime - (currentTime % 900);
+
+   // Already checked this 15-minute period
+   if(currentPeriod == g_lastDateTradeCheck)
+      return;
+
+   // Store the period that was checked
+   g_lastDateTradeCheck = currentPeriod;
+   
+   g_isNewsDay = IsNewsDay();
+   
+   Print("News Day: ", g_isNewsDay);
+}
+
+bool IsNewsDay()
+{
+   MqlDateTime dt;
+   TimeToStruct(TimeCurrent(), dt);
+
+   // Check year
+   if(dt.year != InpNewsTradeYear)
+      return false;
+
+   // Check month
+   if(dt.mon != InpNewsTradeMonth)
+      return false;
+
+   // Split comma-separated days
+   string dayList[];
+   int count = StringSplit(InpNewsTradeDays, ',', dayList);
+
+   if(count <= 0)
+      return false;
+
+   // Check if today's day is in the list
+   for(int i = 0; i < count; i++)
+   {
+      string dayString = dayList[i];
+      StringTrimLeft(dayString);
+      StringTrimRight(dayString);
+
+      int noTradeDay = (int)StringToInteger(dayString);
+
+      if(dt.day == noTradeDay)
+         return true;
+   }
+
+   return false;
+}
