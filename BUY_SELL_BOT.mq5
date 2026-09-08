@@ -30,19 +30,23 @@ input double trailPercentC = 80;                   //Max Trailing Percentage
 
 datetime lastBarTime = 0;
 int positionCounter = 0;
-string currentSymbol = "";
-bool isIndex = true;
+string currentSymbol = "NONE";
+bool isIndex = false;
 
 int OnInit()
-{
-   
-   currentSymbol = _Symbol;
-   
-   StringToUpper(currentSymbol);
-   
-   if (currentSymbol == "GBPUSD" || currentSymbol == "EURUSD")
-      isIndex = false;
-   
+{  
+   if (currentSymbol == "NONE")
+   {   
+      currentSymbol = Symbol();
+      
+      StringToUpper(currentSymbol);
+      
+      //if (currentSymbol == "GBPUSD" || currentSymbol == "EURUSD" || currentSymbol == "BRENTCASH#")
+         isIndex = false;
+         
+      Print("Symbols: ", currentSymbol, " | IsIndex: ", isIndex);
+       
+   }
    trade.SetExpertMagicNumber(magicNumber);
    
    return(INIT_SUCCEEDED);
@@ -185,6 +189,7 @@ void ManageTrailingStop()
       
    positionCounter = CountPositionsByMagic();
    double profitByMagic = GetTotalProfitByMagic();
+   
    if(positionCounter > 1)
      {
       if(profitByMagic > tpMin)
@@ -222,79 +227,89 @@ void ManageTrailingStop()
             return;
          }
    }
-   
-   long type = PositionGetInteger(POSITION_TYPE);
-   ulong ticket = PositionGetInteger(POSITION_TICKET);
-
-   double volume = PositionGetDouble(POSITION_VOLUME);
-   double currentProfit = PositionGetDouble(POSITION_PROFIT);
-   double trailPercent = 0;
-
-   if(currentProfit < tpValueA)
-      return;
-
-   trailPercent = trailPercentA;
-   
-   if (currentProfit < tpValueB)
-   {  
-      trailPercent = trailPercentA;
-   }
-   else if (currentProfit < tpValueC)
+   for (int j = PositionsTotal() - 1; j>= 0; j--)
    {
-      trailPercent = trailPercentB;
-   }
-   else
-   {
-      trailPercent = trailPercentC;
-   }
-
-
-   double currentSL = PositionGetDouble(POSITION_SL);
-   double tp = PositionGetDouble(POSITION_TP);
-
-   double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
-   double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
-
-   double tickValue = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE);
-   double tickSize = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
-
-   double lockedProfit =
-      currentProfit * (trailPercent / 100.0);
-
-   double profitToGiveBack =
-      currentProfit - lockedProfit;
-
-   double priceDistance =
-      (profitToGiveBack / (tickValue * volume)) * tickSize;
+ 
+         ulong ticket = PositionGetTicket(j);
    
-   double newSL;
+         if(ticket == 0)
+            continue;
    
-   //Print ("TV: ", tickValue, " Vol: ", volume, " TS: ", tickSize, " profitToGiveBack: ", profitToGiveBack, " priceDistance: ", priceDistance);
-   if (isIndex)
-      priceDistance = profitToGiveBack / volume;
-   
-   Print ("Profit:", currentProfit, " TV: ", tickValue, " Vol: ", volume, " TS: ", tickSize, " profitToGiveBack: ", profitToGiveBack, " priceDistance: ", priceDistance);
-   
-   
-   if(type == POSITION_TYPE_BUY)
-     {
-      newSL = bid - priceDistance;
-
-      if(currentSL == 0 || newSL > currentSL)
-        {
-         trade.PositionModify(ticket, newSL, tp);
-        }
-     }
-   else
-      if(type == POSITION_TYPE_SELL)
-        {
-         newSL = ask + priceDistance;
-
-         if(currentSL == 0 || newSL < currentSL)
+         if(PositionGetInteger(POSITION_MAGIC) != magicNumber)
+            continue;
+            
+         long type = PositionGetInteger(POSITION_TYPE);
+         
+      
+         double volume = PositionGetDouble(POSITION_VOLUME);
+         double currentProfit = PositionGetDouble(POSITION_PROFIT);
+         double trailPercent = 0;
+      
+         if(currentProfit < tpValueA)
+            return;
+      
+         trailPercent = trailPercentA;
+         
+         if (currentProfit < tpValueB)
+         {  
+            trailPercent = trailPercentA;
+         }
+         else if (currentProfit < tpValueC)
+         {
+            trailPercent = trailPercentB;
+         }
+         else
+         {
+            trailPercent = trailPercentC;
+         }
+      
+      
+         double currentSL = PositionGetDouble(POSITION_SL);
+         double tp = PositionGetDouble(POSITION_TP);
+      
+         double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+         double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+      
+         double tickValue = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE);
+         double tickSize = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
+      
+         double lockedProfit =
+            currentProfit * (trailPercent / 100.0);
+      
+         double profitToGiveBack =
+            currentProfit - lockedProfit;
+      
+         double priceDistance =
+            (profitToGiveBack / (tickValue * volume)) * tickSize;
+         
+         double newSL;
+         
+         if (isIndex)
+            priceDistance = profitToGiveBack / volume;
+         
+         Print ("Magic Number:", magicNumber, " Profit:", currentProfit, " TV: ", tickValue, " Vol: ", volume, " TS: ", tickSize, " profitToGiveBack: ", profitToGiveBack, " priceDistance: ", priceDistance);
+         
+         
+         if(type == POSITION_TYPE_BUY)
            {
-            trade.PositionModify(ticket, newSL, tp);
+            newSL = bid - priceDistance;
+      
+            if(currentSL == 0 || newSL > currentSL)
+              {
+               trade.PositionModify(ticket, newSL, tp);
+              }
            }
-        }
+         else
+            if(type == POSITION_TYPE_SELL)
+              {
+               newSL = ask + priceDistance;
+      
+               if(currentSL == 0 || newSL < currentSL)
+                 {
+                  trade.PositionModify(ticket, newSL, tp);
+                 }
+              }
+   }
   }
   
   void CheckEntry()
@@ -319,6 +334,7 @@ void ManageTrailingStop()
   
   void OnTick()
   {
+
    ManageTrailingStop();
    if(IsNewBar())
      {
