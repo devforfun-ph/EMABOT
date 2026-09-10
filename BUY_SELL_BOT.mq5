@@ -32,6 +32,7 @@ datetime lastBarTime = 0;
 int positionCounter = 0;
 string currentSymbol = "NONE";
 bool isIndex = false;
+bool isJPY = false;
 
 int OnInit()
 {  
@@ -41,8 +42,11 @@ int OnInit()
       
       StringToUpper(currentSymbol);
       
-      //if (currentSymbol == "GBPUSD" || currentSymbol == "EURUSD" || currentSymbol == "BRENTCASH#")
-         isIndex = false;
+      if (currentSymbol == "US100" || currentSymbol == "US500")
+         isIndex = true;
+     
+      if(StringFind(currentSymbol, "JPY") >= 0)
+         isJPY = true;
          
       Print("Symbols: ", currentSymbol, " | IsIndex: ", isIndex);
        
@@ -287,6 +291,8 @@ void ManageTrailingStop()
          if (isIndex)
             priceDistance = profitToGiveBack / volume;
          
+
+            
          Print ("Magic Number:", magicNumber, " Profit:", currentProfit, " TV: ", tickValue, " Vol: ", volume, " TS: ", tickSize, " profitToGiveBack: ", profitToGiveBack, " priceDistance: ", priceDistance);
          
          
