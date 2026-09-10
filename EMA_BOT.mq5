@@ -20,7 +20,8 @@ input group "=== ADDITIONAL FILTER INDICATOR ==="
 //add on filter for consideration
 input bool includeEMAFilter = false;   // Consider Filter?
 input int emaLong = 50;                // Additional Filter EMA(50 min)
-input int rangeFilter = 20;      //Range/Zone +/- for Filter
+input int rangeFilter = 20;            //Range/Zone +/- for Filter
+input bool pureCross = false;          // Trigger in Cross Only
 
 input group "=== TRADING SETTINGS ==="
 input double initLotSize = 0.1;           // Initial Lot Size
@@ -294,7 +295,67 @@ void ManageTrailingStop()
         }
   }
   
+  
+bool GetEmaCross(bool &bullishCross, bool &bearishCross, bool &buyBias, bool &sellBias)
+  {
 
+   bullishCross = false;
+   bearishCross = false;
+   buyBias = true;
+   sellBias = true;
+   
+   if(ema9Handle == INVALID_HANDLE || ema21Handle == INVALID_HANDLE)
+      return false;
+
+
+   double f[3], s[3];
+   double longEMA[3];
+
+   ArraySetAsSeries(f, true);
+   ArraySetAsSeries(s, true);
+
+   if(CopyBuffer(ema9Handle, 0, 1, 3, f) < 3)
+      return false;
+
+   if(CopyBuffer(ema21Handle, 0, 1, 3, s) < 3)
+      return false;
+
+   if(CopyBuffer(emaLongHandle, 0, 0, 3, longEMA) < 0)
+      return false;
+      
+
+   double fastCurrent = f[0];
+   double fastPrev    = f[1];
+   double slowCurrent = s[0];
+   double slowPrev    = s[1];
+
+
+   bullishCross = (fastCurrent > slowCurrent) && (fastPrev <= slowPrev);
+   bearishCross = (fastCurrent < slowCurrent) && (fastPrev >= slowPrev);
+
+   double askPrice = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+   double bidPrice = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   
+   if (bullishCross)
+   {
+      buyBias = askPrice - longEMA[0] < rangeFilter && askPrice > longEMA[0]; 
+   }
+   if (bearishCross)
+   {
+
+      sellBias = longEMA[0] - bidPrice < rangeFilter && bidPrice < longEMA[0];
+   }
+   
+   if (!includeEMAFilter)
+   {
+      buyBias = true;
+      sellBias = true;
+   }
+   
+   
+   return true;
+
+  }
 //continous
 bool GetEmaCrossC(bool &bullishCross, bool &bearishCross, bool &buyBias, bool &sellBias)
   {
@@ -368,9 +429,17 @@ void CheckForSignal()
    
    double usedMargin = 0;
    
-   if(!GetEmaCrossC(buySignal, sellSignal, isBuyBias, isSellBias))
-      return;
-      
+   if (pureCross)
+   {
+      if(!GetEmaCross(buySignal, sellSignal, isBuyBias, isSellBias))
+         return;
+   }  
+   else
+   {
+      if(!GetEmaCrossC(buySignal, sellSignal, isBuyBias, isSellBias))
+         return;
+   }  
+   
    isBuyBiasOrig = isBuyBias;
    isSellBiasOrig = isSellBias;
    
@@ -497,40 +566,7 @@ void CheckForSignal()
 //+------------------------------------------------------------------+
 //|                                                                  |
 //+------------------------------------------------------------------+
-bool GetEmaCross(bool &bullishCross, bool &bearishCross)
-  {
 
-   bullishCross = false;
-   bearishCross = false;
-
-   if(ema9Handle == INVALID_HANDLE || ema21Handle == INVALID_HANDLE)
-      return false;
-
-
-   double f[3], s[3];
-   ArraySetAsSeries(f, true);
-   ArraySetAsSeries(s, true);
-
-   if(CopyBuffer(ema9Handle, 0, 1, 3, f) < 3)
-      return false;
-
-   if(CopyBuffer(ema21Handle, 0, 1, 3, s) < 3)
-      return false;
-
-
-
-   double fastCurrent = f[0];
-   double fastPrev    = f[1];
-   double slowCurrent = s[0];
-   double slowPrev    = s[1];
-
-
-   bullishCross = (fastCurrent > slowCurrent) && (fastPrev <= slowPrev);
-   bearishCross = (fastCurrent < slowCurrent) && (fastPrev >= slowPrev);
-
-   return true;
-
-  }
 
 int CountPositionsByMagic()
 {
