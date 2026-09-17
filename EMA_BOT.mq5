@@ -252,47 +252,58 @@ void ManageTrailingStop()
    {
       trailPercent = trailPercentC;
    }
+   
+   for (int j = PositionsTotal() - 1; j>= 0; j--)
+   {
+ 
+      ulong ticket = PositionGetTicket(j);
+   
+      if(ticket == 0)
+         continue;
 
-
-   double currentSL = PositionGetDouble(POSITION_SL);
-   double tp = PositionGetDouble(POSITION_TP);
-
-   double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
-   double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
-
-   double tickValue = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE);
-   double tickSize = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
-
-   double lockedProfit =
-      currentProfit * (trailPercent / 100.0);
-
-   double profitToGiveBack =
-      currentProfit - lockedProfit;
-
-   double priceDistance =
-      (profitToGiveBack / (tickValue * volume)) * tickSize;
-
-   double newSL;
-
-   if(type == POSITION_TYPE_BUY)
-     {
-      newSL = bid - priceDistance;
-
-      if(currentSL == 0 || newSL > currentSL)
+      if(PositionGetInteger(POSITION_MAGIC) != magicNumber)
+         continue;
+      
+      double currentSL = PositionGetDouble(POSITION_SL);
+      double tp = PositionGetDouble(POSITION_TP);
+   
+      double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+      double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+   
+      double tickValue = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE);
+      double tickSize = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
+   
+      double lockedProfit =
+         currentProfit * (trailPercent / 100.0);
+   
+      double profitToGiveBack =
+         currentProfit - lockedProfit;
+   
+      double priceDistance =
+         (profitToGiveBack / (tickValue * volume)) * tickSize;
+   
+      double newSL;
+   
+      if(type == POSITION_TYPE_BUY)
         {
-         trade.PositionModify(ticket, newSL, tp);
-        }
-     }
-   else
-      if(type == POSITION_TYPE_SELL)
-        {
-         newSL = ask + priceDistance;
-
-         if(currentSL == 0 || newSL < currentSL)
+         newSL = bid - priceDistance;
+   
+         if(currentSL == 0 || newSL > currentSL)
            {
             trade.PositionModify(ticket, newSL, tp);
            }
         }
+      else
+         if(type == POSITION_TYPE_SELL)
+           {
+            newSL = ask + priceDistance;
+   
+            if(currentSL == 0 || newSL < currentSL)
+              {
+               trade.PositionModify(ticket, newSL, tp);
+              }
+           }
+   }
   }
   
   
@@ -357,12 +368,13 @@ bool GetEmaCross(bool &bullishCross, bool &bearishCross, bool &buyBias, bool &se
 
   }
 //continous
-bool GetEmaCrossC(bool &bullishCross, bool &bearishCross, bool &buyBias, bool &sellBias)
+bool GetEmaCrossC(bool &bullishCross, bool &bearishCross, bool &buyBias, bool &sellBias, bool &inRange)
   {
    bullishCross = false;
    bearishCross = false;
    buyBias = true;
    sellBias = true;
+   inRange = false;
    
    double fastEMA[3];
    double slowEMA[3];
@@ -386,12 +398,14 @@ bool GetEmaCrossC(bool &bullishCross, bool &bearishCross, bool &buyBias, bool &s
    
    if (bullishCross)
    {
-      buyBias = askPrice - longEMA[0] < rangeFilter && askPrice > longEMA[0]; 
+      buyBias = askPrice > longEMA[0]; 
+      inRange = askPrice - longEMA[0] < rangeFilter;
    }
    if (bearishCross)
    {
 
-      sellBias = longEMA[0] - bidPrice < rangeFilter && bidPrice < longEMA[0];
+      sellBias = bidPrice < longEMA[0];
+      inRange = longEMA[0] - bidPrice < rangeFilter;
    }
    
     /*** log mode***/
@@ -400,7 +414,9 @@ bool GetEmaCrossC(bool &bullishCross, bool &bearishCross, bool &buyBias, bool &s
    Print("sellSignal: " + bearishCross);
    Print("isBuyBias: " + buyBias);
    Print("isSellBias: " + sellBias);
-   PrintFormat("buyPrice=%.2f | sellPrice=%.2f | LongEMA=%.2f", askPrice, bidPrice, longEMA[0]);
+   Print("Inrange: "  + inRange);
+   PrintFormat("buyPrice=%.2f | sellPrice=%.2f | LongEMA=%.2f| AskPrice-Long=%.2f| BidPrice-Long=%.2f | RangeFilter=%.2f", 
+      askPrice, bidPrice, longEMA[0], askPrice - longEMA[0], longEMA[0] - bidPrice, rangeFilter);
    Print("-----------------------------");
       
    
@@ -423,6 +439,7 @@ void CheckForSignal()
    bool sellSignal = false;
    bool isBuyBias = true;
    bool isSellBias = true;
+   bool inRange = false;
    
    bool isBuyBiasOrig = true;
    bool isSellBiasOrig = true;
@@ -436,7 +453,7 @@ void CheckForSignal()
    }  
    else
    {
-      if(!GetEmaCrossC(buySignal, sellSignal, isBuyBias, isSellBias))
+      if(!GetEmaCrossC(buySignal, sellSignal, isBuyBias, isSellBias, inRange))
          return;
    }  
    
@@ -458,11 +475,11 @@ void CheckForSignal()
    }
    
    //ignore filter if has existing position
-   if (hasPosition)
-   {
-      isBuyBias = true;
-      isSellBias = true;
-   }
+   //if (hasPosition)
+   //{
+   //   isBuyBias = true;
+   //   isSellBias = true;
+   //}
    
    Print("------------");
    Print ("Has Position: " + hasPosition);
@@ -481,17 +498,23 @@ void CheckForSignal()
          Print("EMABOT: Have existing Position(sell...)");
          positionLotSize = GetLotSize();
         }
-
+      
+      Print("Position Lot Size: ", positionLotSize, "| Lot Size: ", lotSize, ", | isBuyBias: ", isBuyBiasOrig);
+      
       if(positionLotSize == lotSize)
       {
          positionCounter = 0;
          
+         if (!inRange)
+            return;
+            
          //check if bias original is true before reset
          if (!isBuyBiasOrig)
             return;
         
          if (!IsInTradeSchedule())
          {
+               Print("not in schedule");
                activePosition = C_None;
                return; 
          }
@@ -520,17 +543,30 @@ void CheckForSignal()
          Print("EMABOT: Have existing Position(buy...)");
          positionLotSize = GetLotSize();
         }
-
+        
+      Print("Position Lot Size: ", positionLotSize, "| Lot Size: ", lotSize, ", | isSellBias: ", isSellBiasOrig);
+      
       if(positionLotSize == lotSize)
         {
          positionCounter = 0;
          
+         
+         if (!inRange)
+         {
+            Print ("Not in Range");
+            return;
+         }
+           
          //check if bias original is true before reset
          if (!isSellBiasOrig)
-            return;
+            {
+               Print("not sell bias");
+               return;
+            }
             
          if (!IsInTradeSchedule())
             {
+               Print("Not in Schedule");
                activePosition = C_None;
                return; 
             }
