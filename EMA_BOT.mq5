@@ -30,6 +30,19 @@ input string multiplierList = "2,1.9,1.8,1.7,1.6,1.5,1.4,1.3,1.2,1";         //M
 input bool isContinous = false; // Continue Trading if Secure Profit Hit?
 input ulong magicNumber = 2047913;  //Random Magic Number/Key
 
+
+input group "=== Multiplier Settings===="
+input double x1 = 2.0;
+input double x2 = 1.9;
+input double x3 = 1.8;
+input double x4 = 1.7;
+input double x5 = 1.6;
+input double x6 = 1.5;
+input double x7 = 1.4;
+input double x8 = 1.3;
+input double x9 = 1.2;
+input double x10 = 1.1;
+
 input group "=== RISK MANAGEMENT ==="
 input double tpMin = 2.0;                  //Minimum Profit
 input double tpValueA = 5;                 //First Trailing Profit
@@ -42,15 +55,20 @@ input double trailPercentB = 75;                   //Second Trailing Percentage
 input double trailPercentC = 80;                   //Max Trailing Percentage
 
 
+
+//                                     1  2  3  4  5   6   7   8   9  10  11	Server Time
+//0   1  2  3  4  5  6 7 8 9 10 11 12 13 14 15 16 17  18  19  20  21  22  23 	GMT+8
+//18 19 20 21 22 23  0 1 2 3  4  5  6  7  8  9 10 11  12  13  14  15  16  17	GMT+2
+
 input group "=== TRADING HOUR ==="
 input int    InpStartHourShift1 = 1;               //Shift 1 - Start Hour
-input int    InpEndHourShift1 = 1;                 //Shift 1 - End Hour
+input int    InpEndHourShift1 = 5;                 //Shift 1 - End Hour
 input int    InpStartHourShift2 = 1;               //Shift 2 - Start Hour
 input int    InpEndHourShift2 = 1;                 //Shift 2 - End Hour
 input int    InpStartHourShift3 = 1;               //Shift 3 - Start Hour
 input int    InpEndHourShift3 = 1;                 //Shift 3 - End Hour
 
-input int    InpTargetGMTOffset  = 8;             // Target Timezone GMT Offset (e.g. 8 = GMT+8)
+input int    InpTargetGMTOffset  = 2;             // Target Timezone GMT Offset (e.g. 8 = GMT+8)
 input int    InpBrokerGMTOffset  = 3;             // Broker Server GMT Offset (yours = GMT+3, confirmed from server clock; may shift ±1hr with DST)
 
 input int hourBeforeClosing = 22;      //Friday No Trade After N Hour
@@ -58,7 +76,7 @@ input bool isForceCloseFriday = false;
 
 input group "=== WITH NEWS SETTING ==="
 input int    InpStartHourShift1News = 1;               //Shift 1 - Start Hour
-input int    InpEndHourShift1News = 1;                 //Shift 1 - End Hour
+input int    InpEndHourShift1News = 5;                 //Shift 1 - End Hour
 input int    InpStartHourShift2News = 1;               //Shift 2 - Start Hour
 input int    InpEndHourShift2News = 1;                 //Shift 2 - End Hour
 input int    InpStartHourShift3News = 1;               //Shift 3 - Start Hour
@@ -113,6 +131,9 @@ int OnInit()
       return(INIT_FAILED);
      }
 
+   /*
+   Remove this if done with fixed variable
+   */
    string values[];
    int lenMultiplier = StringSplit(multiplierList, ',', values);
 
@@ -124,7 +145,6 @@ int OnInit()
    lastMultiplier = arrMultiplier[lenMultiplier-1];
 
    Print("EMABOT: Last Mutliplier :" + lastMultiplier);
-
    Print("Local Time : ", TimeToString(TimeLocal(), TIME_DATE | TIME_SECONDS));
    Print("GMT Time   : ", TimeToString(TimeGMT(), TIME_DATE | TIME_SECONDS));
    Print("Server Time: ", TimeToString(TimeTradeServer(), TIME_DATE | TIME_SECONDS));
@@ -151,18 +171,6 @@ void OnDeinit(const int reason)
 //+------------------------------------------------------------------+
 void OnTick()
   {
-  
-   if (isForceCloseFriday)
-   {
-      if (IsFridayLastNHours())
-      {
-         if (HasOpenPositionByMagic())
-         {
-            CloseAllPositions();
-         }
-         return;
-      }
-   }
    
    CheckNewsDay();
    
@@ -175,7 +183,17 @@ void OnTick()
 
    if(IsNewBar())
      {
-      CheckForSignal();
+         //Clsoe all position for friday only
+         if (isForceCloseFriday)
+         {
+            if (IsFridayLastNHours())
+            {
+               CloseAllPositions();
+               return;
+            }
+         }
+         
+         CheckForSignal();
      }
   }
  
@@ -185,10 +203,12 @@ void OnTick()
 //+------------------------------------------------------------------+
 void ManageTrailingStop()
   {
-   if(!HasOpenPositionByMagic())
+   int nPosCount = CountPositionsByMagic();
+   
+   if (nPosCount == 0)
       return;
-
-   if(positionCounter > 1)
+   
+   if(nPosCount > 1)
      {
       if(GetTotalProfitByMagic() > tpMin)
         {
@@ -196,10 +216,11 @@ void ManageTrailingStop()
          
          if (includeEMAFilter)
          {
-            //check if still in range
+            //exit to check if still in range after a new bar
             activePosition = C_None;
             return; 
          }
+         
          if (!IsInTradeSchedule())
          {
                activePosition = C_None;
@@ -228,31 +249,7 @@ void ManageTrailingStop()
       return;
      }
    
-   long type = PositionGetInteger(POSITION_TYPE);
-   ulong ticket = PositionGetInteger(POSITION_TICKET);
 
-   double volume = PositionGetDouble(POSITION_VOLUME);
-   double currentProfit = PositionGetDouble(POSITION_PROFIT);
-   double trailPercent = 0;
-
-   if(currentProfit < tpValueA)
-      return;
-
-   trailPercent = trailPercentA;
-   
-   if (currentProfit < tpValueB)
-   {  
-      trailPercent = trailPercentA;
-   }
-   else if (currentProfit < tpValueC)
-   {
-      trailPercent = trailPercentB;
-   }
-   else
-   {
-      trailPercent = trailPercentC;
-   }
-   
    for (int j = PositionsTotal() - 1; j>= 0; j--)
    {
  
@@ -263,6 +260,31 @@ void ManageTrailingStop()
 
       if(PositionGetInteger(POSITION_MAGIC) != magicNumber)
          continue;
+         
+      long type = PositionGetInteger(POSITION_TYPE);
+      double volume = PositionGetDouble(POSITION_VOLUME);
+      
+      double currentProfit = PositionGetDouble(POSITION_PROFIT);
+      double trailPercent = 0;
+   
+      if(currentProfit < tpValueA)
+         return;
+   
+      trailPercent = trailPercentA;
+      
+      if (currentProfit < tpValueB)
+      {  
+         trailPercent = trailPercentA;
+      }
+      else if (currentProfit < tpValueC)
+      {
+         trailPercent = trailPercentB;
+      }
+      else
+      {
+         trailPercent = trailPercentC;
+      }
+      
       
       double currentSL = PositionGetDouble(POSITION_SL);
       double tp = PositionGetDouble(POSITION_TP);
@@ -600,9 +622,8 @@ void CheckForSignal()
   }
   
 //+------------------------------------------------------------------+
-//|                                                                  |
+//|Count only positions belongs to EA MagicNumber                    |
 //+------------------------------------------------------------------+
-
 
 int CountPositionsByMagic()
 {
@@ -622,7 +643,9 @@ int CountPositionsByMagic()
    return count;
 }
 
-
+//+------------------------------------------------------------------+
+//|Total Profit for all positions belongs to EA MagicNumber          |
+//+------------------------------------------------------------------+
 double GetTotalProfitByMagic()
 {
    double totalProfit = 0.0;
@@ -644,28 +667,8 @@ double GetTotalProfitByMagic()
 }
 
 //+------------------------------------------------------------------+
-//|                                                                  |
+//|Close all positions belongs to EA MagicNumber                     |
 //+------------------------------------------------------------------+
-double GetTotalProfit()
-  {
-   double totalProfit = 0.0;
-
-   int totalPositions = CountPositionsByMagic();
-
-   for(int i = 0; i < totalPositions; i++)
-     {
-      ulong ticket = PositionGetTicket(i);
-
-      if(PositionSelectByTicket(ticket))
-        {
-         totalProfit += PositionGetDouble(POSITION_PROFIT);
-        }
-     }
-
-   return totalProfit;
-  }
-
-
 void CloseAllPositions()
   {
    for(int i = PositionsTotal()-1; i >= 0; i--)
@@ -679,19 +682,7 @@ void CloseAllPositions()
      }
  }
  
-//+------------------------------------------------------------------+
-//|                                                                  |
-//+------------------------------------------------------------------+
-bool IsNewBar()
-  {
-   datetime currentBar = iTime(_Symbol, PERIOD_CURRENT, 0);
-   if(currentBar != lastBarTime)
-     {
-      lastBarTime = currentBar;
-      return true;
-     }
-   return false;
-  }
+
 
 //+------------------------------------------------------------------+
 //| Returns true only if a position on _Symbol belonging to this EA  |
@@ -757,7 +748,7 @@ bool IsInNoTradeWindow(int iNoTradeStart, int iNoTradeEnd)
 
 double GetBiggestLotSizeByMagic()
 {
-   double biggestLot = 0.0;
+   double biggestLot = lotSize;
 
    for(int i = 0; i < PositionsTotal(); i++)
    {
@@ -779,6 +770,44 @@ double GetBiggestLotSizeByMagic()
    return biggestLot;
 }
 
+double GetMultiplier(int nPosCount)
+{
+   double dMultiplier = x10;
+   switch (nPosCount)
+   {
+      case 1:
+         dMultiplier = x1;
+         break;
+      case 2:
+         dMultiplier = x2;
+         break;
+      case 3:
+         dMultiplier = x3;
+         break;
+      case 4:
+         dMultiplier = x4;
+         break;
+      case 5:
+         dMultiplier = x5;
+         break;
+      case 6:
+         dMultiplier = x6;
+         break;
+      case 7:
+         dMultiplier = x7;
+         break;
+      case 8:
+         dMultiplier = x8;
+         break;
+      case 9:
+         dMultiplier = x9;
+         break;
+      default:
+         dMultiplier = x10;
+         break;
+   }
+   return dMultiplier;
+}
 //+------------------------------------------------------------------+
 //|                                                                  |
 //+------------------------------------------------------------------+
@@ -787,8 +816,9 @@ double GetLotSize()
    double dLotSize = lotSize;
    double multiplier = lastMultiplier;
    double currentPnL = 0;
+   int nPositionCount = CountPositionsByMagic();
 
-   if(positionCounter > 0)
+   if(nPositionCount > 0)
      {
       currentPnL = GetTotalProfitByMagic();
       // close if positive position
@@ -806,27 +836,32 @@ double GetLotSize()
         {
          // to ensure if position still exits
          currentLotSize = GetBiggestLotSizeByMagic();
-           
-         if(positionCounter <= ArraySize(arrMultiplier))
-           {
-            multiplier =  arrMultiplier[positionCounter-1];
-            Print("EMABOT:Position Counter: " + positionCounter);
-            Print("EMABOT:Position Multiplier: " + multiplier);
-
-            dLotSize = NormalizeDouble(currentLotSize * multiplier, roundSize);
-           }
-         else
-           {
-            multiplier = lastMultiplier;
-            dLotSize = NormalizeDouble(currentLotSize * multiplier, roundSize);
-
-           }
+         multiplier = GetMultiplier(nPositionCount);
+         dLotSize = NormalizeDouble(currentLotSize * multiplier, roundSize);  
+          
          Print("EMABOT R: Current Running PnL: " + currentPnL);
         }
      }
    Print("Position Lot Size: " + dLotSize);
    return dLotSize;
   }
+  
+//+------------------------------------------------------------------+
+//|Process only if theres a new bar based on current time frame      |
+//+------------------------------------------------------------------+
+bool IsNewBar()
+  {
+   datetime currentBar = iTime(_Symbol, PERIOD_CURRENT, 0);
+   if(currentBar != lastBarTime)
+     {
+      lastBarTime = currentBar;
+      return true;
+     }
+   return false;
+  }
+  
+//+------------------------------------------------------------------+
+//FOR FORCE CLOSE ALL POSITION ON FRIDAY
 //+------------------------------------------------------------------+
 bool IsFridayLastNHours()
 {
@@ -846,6 +881,10 @@ bool IsFridayLastNHours()
    return false;
 }
 
+
+//+------------------------------------------------------------------+
+//CHECK TRADER SCHEDULE
+//+------------------------------------------------------------------+
 bool IsInTradeSchedule()
 {
    //will ignore checking if start and end are equal
@@ -916,6 +955,11 @@ bool IsInTradeWindow(int iTradeStart, int iTradeEnd)
       return (hour >= iTradeStart || hour < iTradeEnd);
   }
 
+
+
+/************************************
+CHECK IF CURRENT DAY HAS NEWS SETTING
+************************************/
 void CheckNewsDay()
 {
    datetime currentTime = TimeCurrent();
