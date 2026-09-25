@@ -24,7 +24,7 @@ input group "=== TRADING SETTINGS ==="
 input double initLotSize = 0.01;           // Initial Lot Size
 input int roundSize = 2;              // Round off
 input ulong magicNumber = 434437;  //Random Magic Number/Key
-
+input bool isContinous = true; // Continue Trading if Secure Profit Hit?
 
 input group "=== Multiplier Settings===="
 input double x1 = 2.0;
@@ -78,13 +78,15 @@ input int    InpStartHourShift3News = 1;               //Shift 3 - Start Hour
 input int    InpEndHourShift3News = 1;                 //Shift 3 - End Hour
 input double newsLotSize = 0.01;                         //Lot Size w/ News
 
-input int          InpNewsTradeYear   = 2026;
-input int          InpNewsTradeMonth  = 9;
-input string       InpNewsTradeDays   = "5,10,15,25";
+input group "=== Monthly Economic Calendar Date ==="
+input int          InpNewsTradeYear   = 2026;            // Year 
+input int          InpNewsTradeMonth  = 9;               // Month 
+input string       InpNewsTradeDays   = "5,10,15,25";    // Days 
 
 bool g_isNewsDay = false;
 datetime g_lastDateTradeCheck = 0;
 datetime lastBarTime = 0;
+datetime lastZLBarTime = 0;
 double lotSize = 0;
 
 double currentLotSize = 0;
@@ -100,6 +102,9 @@ CurrentPosition activePosition = C_None;
 
 int macd3MHandle;
 int macd15MHandle;
+
+int macdState = 0;
+int macdZLState = 0;
 
 //+------------------------------------------------------------------+
 //| Expert initialization function                                   |
@@ -172,9 +177,16 @@ void OnTick()
       lotSize = initLotSize;
       
    ManageTrailingStop();
+   
+    
+   if (IsNewZLBar())
+   {
+      UpdateZLDStatee();
+   }
 
    if(IsNewBar())
      {
+          UpdateMACDState();
          //Clsoe all position for friday only
          if (isForceCloseFriday)
          {
@@ -197,6 +209,9 @@ void CheckForSignal()
    bool hasPosition = HasOpenPositionByMagic();
    double positionLotSize = lotSize;
    
+   if (!hasPosition && isContinous)
+      activePosition = C_None;
+      
    if(signal == 1 && activePosition != C_Buy)
    {
          if(hasPosition)
@@ -250,6 +265,150 @@ void CheckForSignal()
    }
 }
 
+
+//==================================================================
+// UPDATE M3 MACD STATE
+//==================================================================
+
+void UpdateMACDState()
+{
+   double macd[3];
+   double signal[3];
+
+   ArraySetAsSeries(macd, true);
+   ArraySetAsSeries(signal, true);
+
+
+   //==============================================================
+   // MACD MAIN
+   //==============================================================
+
+   if(CopyBuffer(
+      macd3MHandle,
+      0,
+      0,
+      3,
+      macd
+   ) < 3)
+   {
+      Print("ERROR: Cannot read M3 MACD");
+      return;
+   }
+
+
+   //==============================================================
+   // SIGNAL LINE
+   //==============================================================
+
+   if(CopyBuffer(
+      macd3MHandle,
+      1,
+      0,
+      3,
+      signal
+   ) < 3)
+   {
+      Print("ERROR: Cannot read M3 Signal");
+      return;
+   }
+
+
+   //==============================================================
+   // BULLISH CROSS
+   //
+   // Previous closed candle:
+   // MACD <= Signal
+   //
+   // Latest closed candle:
+   // MACD > Signal
+   //==============================================================
+
+   bool bullishCross =
+      macd[2] <= signal[2] &&
+      macd[1] > signal[1];
+
+
+   //==============================================================
+   // BEARISH CROSS
+   //==============================================================
+
+   bool bearishCross =
+      macd[2] >= signal[2] &&
+      macd[1] < signal[1];
+
+
+   //==============================================================
+   // STORE STATE
+   //==============================================================
+
+   if(bullishCross)
+   {
+      macdState = 1;
+
+      Print(
+         "M3 MACD STATE = BULLISH | ",
+         "MACD: ", DoubleToString(macd[1], 6),
+         " | Signal: ", DoubleToString(signal[1], 6)
+      );
+   }
+
+
+   if(bearishCross)
+   {
+      macdState = -1;
+
+      Print(
+         "M3 MACD STATE = BEARISH | ",
+         "MACD: ", DoubleToString(macd[1], 6),
+         " | Signal: ", DoubleToString(signal[1], 6)
+      );
+   }
+}
+
+
+void UpdateZLDStatee()
+{
+   double macd[2];
+
+   ArraySetAsSeries(macd, true);
+
+   if(CopyBuffer(macd15MHandle, 0, 0, 2, macd) < 2)
+      return;
+
+   //--- M15 MACD above zero
+   if(macd[1] > 0)
+   {
+      macdZLState = 1;
+   }
+   //--- M15 MACD below zero
+   else if(macd[1] < 0)
+   {
+      macdZLState = -1;
+   }
+}
+
+
+bool IsNewZLBar()
+{
+   datetime barTime = iTime(
+      _Symbol,
+      MACDZeroLinePeriod,
+      0
+   );
+
+   if(barTime == 0)
+      return false;
+
+   if(barTime != lastZLBarTime)
+   {
+      lastZLBarTime = barTime;
+      return true;
+   }
+
+   return false;
+}
+
+
 /*
    1 - BUY
   -1 - SELL
@@ -257,159 +416,31 @@ void CheckForSignal()
 */
 int GetMACDSignal()
 {
-   double MACD_M3[3];
-   double Signal_M3[3];
-
-   double MACD_M15[2];
-
-
-   ArraySetAsSeries(MACD_M3, true);
-   ArraySetAsSeries(Signal_M3, true);
-   ArraySetAsSeries(MACD_M15, true);
-
-
-   //==============================================================
-   // Get M3 MACD
-   //==============================================================
-
-   if(CopyBuffer(
-      macd3MHandle,
-      0,                  // MACD MAIN
-      0,
-      3,
-      MACD_M3
-   ) < 3)
-   {
-      Print("ERROR: Cannot copy M3 MACD");
-      return 0;
-   }
-
-
-   //==============================================================
-   // Get M3 SIGNAL LINE
-   //==============================================================
-
-   if(CopyBuffer(
-      macd3MHandle,
-      1,                  // SIGNAL
-      0,
-      3,
-      Signal_M3
-   ) < 3)
-   {
-      Print("ERROR: Cannot copy M3 Signal");
-      return 0;
-   }
-
-
-   //==============================================================
-   // Get M15 MACD MAIN LINE
-   //==============================================================
-
-   if(CopyBuffer(
-      macd15MHandle,
-      0,                  // MACD MAIN
-      0,
-      2,
-      MACD_M15
-   ) < 2)
-   {
-      Print("ERROR: Cannot copy M15 MACD");
-      return 0;
-   }
-
-
-   //==============================================================
-   // USE CLOSED CANDLES
-   //
-   // [0] = current forming candle
-   // [1] = latest closed candle
-   // [2] = previous closed candle
-   //==============================================================
-
-
-   //==============================================================
-   // M15 FILTER
-   //==============================================================
-
-   bool M15_Bullish =
-      MACD_M15[1] > 0;
-
-   bool M15_Bearish =
-      MACD_M15[1] < 0;
-
-
-   //==============================================================
-   // M3 BULLISH CROSSOVER
-   //==============================================================
-
-   bool M3_BullishCross =
-      MACD_M3[2] <= Signal_M3[2] &&
-      MACD_M3[1] > Signal_M3[1];
-
-
-   //==============================================================
-   // M3 BEARISH CROSSOVER
-   //==============================================================
-
-   bool M3_BearishCross =
-      MACD_M3[2] >= Signal_M3[2] &&
-      MACD_M3[1] < Signal_M3[1];
-
-
-   //==============================================================
-   // DEBUG
-   //==============================================================
-
-   PrintFormat(
-      "MACD M3 | Previous: %.6f | Current: %.6f | Signal: %.6f",
-      MACD_M3[2],
-      MACD_M3[1],
-      Signal_M3[1]
-   );
-
-   PrintFormat(
-      "MACD M15 | Main: %.6f | Zero Filter: %s",
-      MACD_M15[1],
-      M15_Bullish ? "BULLISH" :
-      M15_Bearish ? "BEARISH" : "ZERO"
-   );
-
-
-   //==============================================================
-   // BUY CONDITION
-   //
-   // M3 MACD crosses ABOVE Signal
-   // AND
-   // M15 MACD Main Line is ABOVE Zero
-   //==============================================================
+   //==================================================
+   // BUY
+   // M3 is bullish AND M15 is above zero
+   //==================================================
    
-   Print("M3Bullish: ", M3_BullishCross, " | M15 Bullish: ", M15_Bullish, " | M3 Bearish: ", M3_BearishCross, " | M15 Bearish: ", M15_Bearish);
-
-   if(M3_BullishCross && M15_Bullish)
+   Print("MACD State: ", macdState);
+   Print("MACD Zero Line State: ", macdZLState);
+   
+   if(macdState == 1 &&
+      macdZLState == 1)
    {
-      Print(">>> BUY CONFIRMED <<<");
-
       return 1;
    }
 
 
-   //==============================================================
-   // SELL CONDITION
-   //
-   // M3 MACD crosses BELOW Signal
-   // AND
-   // M15 MACD Main Line is BELOW Zero
-   //==============================================================
-
-   if(M3_BearishCross && M15_Bearish)
+   //==================================================
+   // SELL
+   // M3 is bearish AND M15 is below zero
+   //==================================================
+   if(macdState == -1 &&
+      macdZLState == -1)
    {
-      Print(">>> SELL CONFIRMED <<<");
-
       return -1;
    }
-
-
+   
    return 0;
 }
 
