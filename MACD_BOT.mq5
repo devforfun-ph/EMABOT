@@ -1,8 +1,5 @@
-//+------------------------------------------------------------------+
-//|                                                     MACD_BOT.mq5 |
-//|                                  Copyright 2026, MetaQuotes Ltd. |
-//|                                             https://www.mql5.com |
-//+------------------------------------------------------------------+
+//Last Update: 28 Sept 2026
+
 #property copyright "Copyright 2026, MetaQuotes Ltd."
 #property link      "https://www.mql5.com"
 #property version   "1.00"
@@ -21,10 +18,10 @@ input int SignalPeriod  = 9;                             // Signal Period
 
 
 input group "=== TRADING SETTINGS ==="
-input double initLotSize = 0.01;           // Initial Lot Size
-input int roundSize = 2;              // Round off
-input ulong magicNumber = 434437;  //Random Magic Number/Key
-input bool isContinous = true; // Continue Trading if Secure Profit Hit?
+input double initLotSize = 0.01;                         // Initial Lot Size
+input int roundSize = 2;                                 // Round off
+input ulong magicNumber = 434437;                        //Random Magic Number/Key
+input bool isContinous = true;                           // Continue Trading if Secure Profit Hit?
 
 input group "=== Multiplier Settings===="
 input double x1 = 2.0;
@@ -39,17 +36,18 @@ input double x9 = 1.2;
 input double x10 = 1.1;
 
 input group "=== RISK MANAGEMENT ==="
-input double tpMin = 2.0;                  //Minimum Profit
-input double tpValueA = 5;                 //First Trailing Profit
-input double tpValueB = 10;                //Second Trailing Profit
-input double tpValueC = 15;                //Max Trailing Profit
+input double tpMin = 2.0;                    //Minimum TP (2-3 Position)
+input double tpMinMore = 8;                  //Minimum TP (4 or more)
+input double tpValueA = 5;                   //First Trailing Profit
+input double tpValueB = 10;                  //Second Trailing Profit
+input double tpValueC = 15;                  //Max Trailing Profit
+
+
 
 // create 3 trailing percentage based on profit
 input double trailPercentA = 55;                   //First Trailing Percentage
 input double trailPercentB = 65;                   //Second Trailing Percentage
 input double trailPercentC = 75;                   //Max Trailing Percentage
-
-
 
 //                                     1  2  3  4  5   6   7   8   9  10  11	Server Time
 //0   1  2  3  4  5  6 7 8 9 10 11 12 13 14 15 16 17  18  19  20  21  22  23 	GMT+8
@@ -78,10 +76,14 @@ input int    InpStartHourShift3News = 1;               //Shift 3 - Start Hour
 input int    InpEndHourShift3News = 1;                 //Shift 3 - End Hour
 input double newsLotSize = 0.01;                         //Lot Size w/ News
 
-input group "=== Monthly Economic Calendar Date ==="
-input int          InpNewsTradeYear   = 2026;            // Year 
-input int          InpNewsTradeMonth  = 9;               // Month 
-input string       InpNewsTradeDays   = "5,10,15,25";    // Days 
+input group "=== News Date ==="
+input int          InpNewsTradeYear   = 2026;            //Year A
+input int          InpNewsTradeMonth  = 9;               //Month A
+input string       InpNewsTradeDays   = "5,10,15,25";    //Days Month A
+
+input int          InpNewsTradeYearB  = 2026;            //Year B
+input int          InpNewsTradeMonthB  = 1;              //Month B
+input string       InpNewsTradeDaysB   = "1";            //Days of Month B
 
 bool g_isNewsDay = false;
 datetime g_lastDateTradeCheck = 0;
@@ -444,17 +446,21 @@ int GetMACDSignal()
    return 0;
 }
 
-
 void ManageTrailingStop()
   {
    int nPosCount = CountPositionsByMagic();
    
    if (nPosCount == 0)
       return;
-   
+  
+  double minTP = tpMin;
+  
+  if (nPosCount > 3)
+      minTP = tpMinMore;
+      
    if(nPosCount > 1)
      {
-      if(GetTotalProfitByMagic() > tpMin)
+      if(GetTotalProfitByMagic() > minTP)
         {
          CloseAllPositions();
          activePosition = C_None;
@@ -872,20 +878,33 @@ void CheckNewsDay()
 
 bool IsNewsDay()
 {
+   
+   if (IsNews(InpNewsTradeYear , InpNewsTradeMonth, InpNewsTradeDays))
+      return true;
+      
+   if (IsNews(InpNewsTradeYearB , InpNewsTradeMonthB , InpNewsTradeDaysB))
+      return true;
+      
+   return false;
+}
+
+
+bool IsNews(int year, int month, string dl)
+{
    MqlDateTime dt;
    TimeToStruct(TimeCurrent(), dt);
 
    // Check year
-   if(dt.year != InpNewsTradeYear)
+   if(dt.year != year)
       return false;
 
    // Check month
-   if(dt.mon != InpNewsTradeMonth)
+   if(dt.mon != month)
       return false;
 
    // Split comma-separated days
    string dayList[];
-   int count = StringSplit(InpNewsTradeDays, ',', dayList);
+   int count = StringSplit(dl, ',', dayList);
 
    if(count <= 0)
       return false;
