@@ -4,6 +4,7 @@
 3. When BOS Confirmed, Find FVG
 4. WHen FVG Cofirmed, wait for retracement
 5. Price enters FVG Zone, (Buy mode only)
+Version as of 10 Oct 26 7:33 PM GMT+8
 */
 
 #include <Trade/Trade.mqh>
@@ -15,9 +16,10 @@ input group "=== TRADING SETTINGS ==="
 input double lotSize = 0.2;               // Initial Lot Size
 input ulong magicNumber = 98765;          //Random Magic Number/Key
 
+
 input group "=== DCA SETTINGS ==="
 input double addLotSize = 0.1;              // DCA Cover 
-input bool useLotSize = false;                    // Use DCA Setting Lot Size
+input bool useLotSize = true;                    // Use DCA Setting Lot Size
 input double lostProfitThreshold = 50;     // Profit Threshold
 
 
@@ -49,6 +51,8 @@ input int    InpBrokerGMTOffset  = 3;             // Broker Server GMT Offset (y
 //| FVG + BOS Detection Module                                      |
 //+------------------------------------------------------------------+
 input group "==== FVG SETTING ==="
+input bool AllowBullish = false;                // Allow Bullish FVG
+input bool AllowBearish = false;                // Allow Bearish FVG
 input ENUM_TIMEFRAMES StructureTF = PERIOD_M15; //TF Structure
 input int SwingStrength = 2;                    //Candle (min 2)
 input int LookbackBars  = 100;                  //Lookback Bars
@@ -58,7 +62,7 @@ input bool withRetracement = true;              //With Retracement
 //-------------------------------------------------------------------
 // Market structure
 //-------------------------------------------------------------------
-
+datetime lastBarTime = 0;
 double LastSwingHigh = 0;
 double LastSwingLow  = 0;
 datetime LastSwingHighTime = 0;
@@ -481,9 +485,9 @@ bool FindBearishFVGAfterBOS()
    if(CopyRates(_Symbol, StructureTF, 1, 3, rates) != 3)
       return false;
 
-
-   if(rates[1].time <= BOS_Time)
-      return false;
+   if (DrawBOS)
+      if(rates[1].time <= BOS_Time)
+         return false;
 
 
    // Bearish FVG
@@ -519,7 +523,7 @@ void ProcessSetup()
    // ------------------------------------------------------------
    if (DrawBOS)
    {
-      if(CurrentSetup == SETUP_NONE)
+      if(CurrentSetup == WAIT_FVG_BULLISH)
       {
          if(FindBullishFVGAfterBOS())
          {
@@ -528,16 +532,37 @@ void ProcessSetup()
             Print("BULLISH FVG confirmed."," Waiting for retracement.");
          }
       }
+      else if (CurrentSetup == WAIT_FVG_BEARISH)
+      {
+         if(FindBearishFVGAfterBOS())
+         {
+            CurrentSetup = WAIT_RETRACEMENT_BEARISH;
+   
+            Print("BEARISH FVG confirmed."," Waiting for retracement.");
+         }
+      }
    }
    else
    {
       if(CurrentSetup == SETUP_NONE)
       {
-         if(FindBullishFVGAfterBOS())
+         if (AllowBullish)
          {
-            CurrentSetup = WAIT_RETRACEMENT_BULLISH;
-   
-            Print("BULLISH FVG confirmed."," Waiting for retracement.");
+            if(FindBullishFVGAfterBOS())
+            {
+               CurrentSetup = WAIT_RETRACEMENT_BULLISH;
+      
+               Print("BULLISH FVG confirmed."," Waiting for retracement.");
+            }
+         }
+         if (AllowBearish)
+         {
+            if(FindBearishFVGAfterBOS())
+            {
+               CurrentSetup = WAIT_RETRACEMENT_BEARISH;
+      
+               Print("BEARISH FVG confirmed."," Waiting for retracement.");
+            }
          }
       }
    }
@@ -679,55 +704,35 @@ void CheckEntry()
    // ------------------------------------------------------------
    // BULLISH
    // ------------------------------------------------------------
-
-   if(CurrentSetup == WAIT_RETRACEMENT_BULLISH)
+   if (AllowBullish)
    {
-
-      bool tbuy = trade.Buy(lotSize, _Symbol);
-      
-      Print("LOG: BUY ENTRY SIGNAL"," | Price retraced into Bullish FVG"," | FVG Low=", FVG_Low," | FVG High=", FVG_High," | Created Price=", trade.ResultPrice());
-      
-      EntryTriggered = true;
-
-      CurrentSetup = SETUP_NONE;
+      if(CurrentSetup == WAIT_RETRACEMENT_BULLISH)
+      {
+   
+         bool tbuy = trade.Buy(lotSize, _Symbol);
+         
+         Print("LOG: BUY ENTRY SIGNAL"," | Price retraced into Bullish FVG"," | FVG Low=", FVG_Low," | FVG High=", FVG_High," | Created Price=", trade.ResultPrice());
+         
+         EntryTriggered = true;
+   
+         CurrentSetup = SETUP_NONE;
+         return;
+      }
    }
-
-
-   // ------------------------------------------------------------
-   // BEARISH
-   // ------------------------------------------------------------
-   return;
    
-   //ignore sell
-   
-   if(CurrentSetup == WAIT_RETRACEMENT_BEARISH)
+   if (AllowBearish)
    {
-      Print(
-         "SELL ENTRY SIGNAL",
-         " | Price retraced into Bearish FVG",
-         " | FVG Low=", FVG_Low,
-         " | FVG High=", FVG_High
-      );
-
-
-      // =========================================================
-      // YOUR trade.Sell() GOES HERE
-      // =========================================================
-
-      // Example:
-      //
-      // trade.Sell(
-      //    LotSize,
-      //    _Symbol,
-      //    0,
-      //    StopLoss,
-      //    TakeProfit
-      // );
-
-
-      EntryTriggered = true;
-
-      CurrentSetup = SETUP_NONE;
+      if(CurrentSetup == WAIT_RETRACEMENT_BEARISH)
+      {
+            bool tbuy = trade.Sell(lotSize, _Symbol);
+            
+            Print("LOG: SELL ENTRY SIGNAL"," | Price retraced into Bearish FVG"," | FVG Low=", FVG_Low," | FVG High=", FVG_High," | Created Price=", trade.ResultPrice());
+            
+            EntryTriggered = true;
+      
+            CurrentSetup = SETUP_NONE;
+            return;
+      }
    }
 }
 
@@ -811,8 +816,11 @@ void AddNewPosition()
       {
          newLotSize = addLotSize;
       }
-      bool tbuy = trade.Buy(newLotSize, _Symbol);
       
+      if (AllowBullish)
+         bool tbuy = trade.Buy(newLotSize, _Symbol);
+      else
+         bool tsell = trade.Sell(newLotSize, _Symbol);
       Print("LOG: Created DCA Position at Price: ", trade.ResultPrice(), "| Last Profit Detected: ", logProfit);
    }
 }
@@ -898,55 +906,95 @@ void ManageTrailingStop()
       trailPercent = trailPercentC;
    }
 
-
-   double currentSL = PositionGetDouble(POSITION_SL);
-   double tp = PositionGetDouble(POSITION_TP);
-
-   double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
-   double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
-
-   double tickValue = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE);
-   double tickSize = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
-
-   double lockedProfit =
-      currentProfit * (trailPercent / 100.0);
-
-   double profitToGiveBack =
-      currentProfit - lockedProfit;
-
-   double priceDistance =
-      (profitToGiveBack / (tickValue * volume)) * tickSize;
+   for (int j = PositionsTotal() - 1; j>= 0; j--)
+   {
+ 
+         ulong ticket = PositionGetTicket(j);
+   
+         if(ticket == 0)
+            continue;
+   
+         if(PositionGetInteger(POSITION_MAGIC) != magicNumber)
+            continue;
+            
+         long type = PositionGetInteger(POSITION_TYPE);
+         
       
-   Print ("TV: ", tickValue, " Vol: ", volume, " TS: ", tickSize, " profitToGiveBack: ", profitToGiveBack, " priceDistance: ", priceDistance);
-   
-   priceDistance = profitToGiveBack / volume;
-   
-   Print ("TV: ", tickValue, " Vol: ", volume, " TS: ", tickSize, " profitToGiveBack: ", profitToGiveBack, " priceDistance: ", priceDistance);
-   
-   double newSL;
+         double volume = PositionGetDouble(POSITION_VOLUME);
+         double currentProfit = PositionGetDouble(POSITION_PROFIT);
+         double trailPercent = 0;
+      
+         if(currentProfit < tpValueA)
+            return;
+      
+         trailPercent = trailPercentA;
+         
+         if (currentProfit < tpValueB)
+         {  
+            trailPercent = trailPercentA;
+         }
+         else if (currentProfit < tpValueC)
+         {
+            trailPercent = trailPercentB;
+         }
+         else
+         {
+            trailPercent = trailPercentC;
+         }
+      
+      
+         double currentSL = PositionGetDouble(POSITION_SL);
+         double tp = PositionGetDouble(POSITION_TP);
+      
+         double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+         double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+      
+         double tickValue = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE);
+         double tickSize = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
+      
+         double lockedProfit =
+            currentProfit * (trailPercent / 100.0);
+      
+         double profitToGiveBack =
+            currentProfit - lockedProfit;
+      
+         double priceDistance =
+            (profitToGiveBack / (tickValue * volume)) * tickSize;
+         
+         double newSL;
 
-   if(type == POSITION_TYPE_BUY)
-     {
-      newSL = bid - priceDistance;
-
-      if(currentSL == 0 || newSL > currentSL)
-        {
-         trade.PositionModify(ticket, newSL, tp);
-        }
-     }
-   else
-      if(type == POSITION_TYPE_SELL)
-        {
-         newSL = ask + priceDistance;
-
-         if(currentSL == 0 || newSL < currentSL)
+         if(type == POSITION_TYPE_BUY)
            {
-            trade.PositionModify(ticket, newSL, tp);
+            newSL = bid - priceDistance;
+      
+            if(currentSL == 0 || newSL > currentSL)
+              {
+               trade.PositionModify(ticket, newSL, tp);
+              }
            }
-        }
+         else
+            if(type == POSITION_TYPE_SELL)
+              {
+               newSL = ask + priceDistance;
+      
+               if(currentSL == 0 || newSL < currentSL)
+                 {
+                  trade.PositionModify(ticket, newSL, tp);
+                 }
+              }
+   }
   }
   
-
+bool IsNewBar()
+  {
+   datetime currentBar = iTime(_Symbol, PERIOD_M1, 0);
+   if(currentBar != lastBarTime)
+     {
+      lastBarTime = currentBar;
+      return true;
+     }
+   return false;
+  }
 
 void OnTick()
 {
@@ -958,8 +1006,8 @@ void OnTick()
          StructureTF,
          0
       );
-
-
+   
+    
    // ============================================================
    // NEW CANDLE
    // ============================================================
@@ -991,6 +1039,7 @@ void OnTick()
       // ---------------------------------------------------------
 
       ProcessSetup();
+      
    }
    
    ManageTrailingStop();
@@ -998,7 +1047,7 @@ void OnTick()
    // ============================================================
    // FVG → RETRACEMENT → ENTRY
    // ============================================================
-   
-   CheckEntry();
+   if (IsNewBar())
+      CheckEntry();
 }
 
