@@ -10,7 +10,7 @@
 #include <Trade/Trade.mqh>
 CTrade trade;
 
-
+input group "=== Version: 13 Oct 2026  ==="
 //--- input parameters (Indicator)
 input group "=== STRATEGY INDICATOR ==="
 input int emaSlow=9;              //Slow EMA
@@ -18,17 +18,16 @@ input int emaFast=21;             //Fast EMA
 
 input group "=== ADDITIONAL FILTER INDICATOR ==="
 //add on filter for consideration
-input bool includeEMAFilter = false;   // Consider Filter?
-input int emaLong = 50;                // Additional Filter EMA(50 min)
-input int rangeFilter = 20;            //Range/Zone +/- for Filter
+input bool includeEMAFilter = true;   // Consider Filter?
+input int emaLong = 100;                // Additional Filter EMA(50 min)
+input int rangeFilter = 5;            //Range/Zone +/- for Filter
 input bool pureCross = false;          // Trigger in Cross Only
 
 input group "=== TRADING SETTINGS ==="
-input double initLotSize = 0.1;           // Initial Lot Size
-input int roundSize = 1;              // Round off
-input string multiplierList = "2,1.9,1.8,1.7,1.6,1.5,1.4,1.3,1.2,1";         //Multiplier List
-input bool isContinous = false; // Continue Trading if Secure Profit Hit?
-input ulong magicNumber = 2047913;  //Random Magic Number/Key
+input double initLotSize = 0.1;              // Initial Lot Size
+input int roundSize = 1;                     // Round off
+input bool isContinous = true;               // Continue Trading if Secure Profit Hit?
+input ulong magicNumber = 4123;              //Random Magic Number/Key
 
 
 input group "=== Multiplier Settings===="
@@ -83,9 +82,9 @@ input int    InpStartHourShift3News = 1;               //Shift 3 - Start Hour
 input int    InpEndHourShift3News = 1;                 //Shift 3 - End Hour
 input double newsLotSize = 0.1;                         //Lot Size w/ News
 
-input int          InpNewsTradeYear   = 2026;
-input int          InpNewsTradeMonth  = 9;
-input string       InpNewsTradeDays   = "5,10,15,25";
+input int          InpNewsTradeYear   = 2026;         //Year
+input int          InpNewsTradeMonth  = 9;            //Month
+input string       InpNewsTradeDays   = "5,10,15,25"; //Days
 
 bool g_isNewsDay = false;
 datetime g_lastDateTradeCheck = 0;
@@ -100,8 +99,6 @@ int emaLongHandle;
 datetime lastBarTime = 0;
 double lotSize = 0;
 int positionCounter = 0;
-int lenMultiplier = 0;
-double arrMultiplier[];
 double lastMultiplier;
 double currentLotSize = 0;
 int maxPosition = 0;
@@ -131,20 +128,7 @@ int OnInit()
       return(INIT_FAILED);
      }
 
-   /*
-   Remove this if done with fixed variable
-   */
-   string values[];
-   int lenMultiplier = StringSplit(multiplierList, ',', values);
-
-   ArrayResize(arrMultiplier, lenMultiplier);
-
-   for(int i=0; i<lenMultiplier; i++)
-      arrMultiplier[i] = StringToDouble(values[i]);
-
-   lastMultiplier = arrMultiplier[lenMultiplier-1];
-
-   Print("EMABOT: Last Mutliplier :" + lastMultiplier);
+   
    Print("Local Time : ", TimeToString(TimeLocal(), TIME_DATE | TIME_SECONDS));
    Print("GMT Time   : ", TimeToString(TimeGMT(), TIME_DATE | TIME_SECONDS));
    Print("Server Time: ", TimeToString(TimeTradeServer(), TIME_DATE | TIME_SECONDS));
@@ -814,7 +798,7 @@ double GetMultiplier(int nPosCount)
 double GetLotSize()
   {
    double dLotSize = lotSize;
-   double multiplier = lastMultiplier;
+   double multiplier = 1;
    double currentPnL = 0;
    int nPositionCount = CountPositionsByMagic();
 
