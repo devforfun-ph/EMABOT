@@ -5,34 +5,34 @@
 CTrade trade;
 
 
-input group "=== Version: 19 Oct 2026  ==="
+input group "=== Version: 23 Oct 2026  ==="
 
 input group "=== STRATEGY INDICATOR ==="
-input ENUM_TIMEFRAMES EMASLowPeriod = PERIOD_M3;               //Slow EMA TF
-input int emaSlow=20;                                          //Slow EMA
-input bool checkEMASlow = true;                                //Check EMA Slow
-input ENUM_TIMEFRAMES EMAFastPeriod = PERIOD_M3;               //Slow EMA TF
-input int emaFast=200;                                         //Fast EMA
-input bool checkEMAFast = true;                                //Check EMA Fast
-input ENUM_TIMEFRAMES MACDPeriod = PERIOD_M3;                  //MACD TF
-input int FastEMA       = 12;                                  // MACD Fast EMA
+input ENUM_TIMEFRAMES EMAFastPeriod = PERIOD_M3;               //EMA TF
+input int emaFast=200;                                         //EMA Length
+
+input group "=== STRATEGY INDICATOR FILTER ==="
+input bool checkEMACross = false;                              //Check EMA Cross
+input int emaCrossSlow=9;                                      //Slow EMA
+input int emaCrossFast=21;                                     //Fast EMA
+input ENUM_TIMEFRAMES EMACrossPeriod = PERIOD_M3;              //EMA Cross TF
+
+input bool checkMACD = true;                                   //Check MACD
+input int FastEMA       = 12;                                  //MACD Fast EMA
 input int SlowEMA       = 26;                                  //MACD Slow EMA
 input int SignalPeriod  = 9;                                   //MACD Signal Period
-input bool checkMACD = true;                                   //Check MACD
+input ENUM_TIMEFRAMES MACDPeriod = PERIOD_M3;                  //MACD TF
 
 input group "=== TRADING SETTINGS ==="
 input double initLotSize = 0.01;                               // Initial Lot Size
 input ulong magicNumber = 2026;                                // Magic Number
 
-input double macdBuyBelow = 0;                                 // MACD Lines Buy Below Value
-input double macdSellAbove = 0;                                // MACD Lines Sell Above Value
-
 input group "=== RISK MANAGEMENT ==="
 input bool hasSL = false;                                      //Force Stop-Loss
-input double slValue = 10;                                     // Stop-Loss Value
-input double tpValueA = 20;                                    //First Trailing Profit
-input double tpValueB = 30;                                    //Second Trailing Profit
-input double tpValueC = 40;                                    //Max Trailing Profit
+input double slValue = 15;                                     // Stop-Loss Value
+input double tpValueA = 6;                                    //First Trailing Profit
+input double tpValueB = 12;                                    //Second Trailing Profit
+input double tpValueC = 18;                                    //Max Trailing Profit
 
 // create 3 trailing percentage based on profit
 input double trailPercentA = 55;                               //First Trailing Percentage
@@ -52,7 +52,7 @@ input int    InpTargetGMTOffset  = 2;                          // Target Timezon
 input int    InpBrokerGMTOffset  = 3;                          // Broker Server GMT Offset (yours = GMT+3, confirmed from server clock; may shift ±1hr with DST)
    
 input int hourBeforeClosing = 22;                              //Friday No Trade After N Hour
-input bool isForceCloseFriday = false;
+input bool isForceCloseFriday = true;
 
 input group "=== WITH NEWS SETTING ==="
 input int    InpStartHourShift1News = 1;                       //Shift 1 - Start Hour
@@ -64,16 +64,17 @@ input int    InpEndHourShift3News = 1;                         //Shift 3 - End H
 input double newsLotSize = 0.01;                               //Lot Size w/ News
 
 input group "=== News Date ==="
-input int          InpNewsTradeYear   = 2026;                  //Year A
+input int          InpNewsTradeYear   = 2025;                  //Year A
 input int          InpNewsTradeMonth  = 9;                     //Month A
 input string       InpNewsTradeDays   = "5,10,15,25";          //Days Month A
 
-input int          InpNewsTradeYearB  = 2026;                  //Year B
+input int          InpNewsTradeYearB  = 2025;                  //Year B
 input int          InpNewsTradeMonthB  = 1;                    //Month B
 input string       InpNewsTradeDaysB   = "1";                  //Days of Month B
 
 int emaFastHandle;
-int emaSlowHandle;
+int emaCrossSlowHandle;
+int emaCrossFastHandle;
 int macdHandle;
 
 
@@ -82,8 +83,11 @@ datetime g_lastDateTradeCheck = 0;
 datetime lastBarTime = 0;
 double lotSize = 0;
 
-int macdState = 0;   // 1: buy | -1: sell
-int emaState = 0;   // 1: buy | -1: sell
+
+// 1: buy | -1: sell
+int macdState = 0;         
+int emaState = 0;    
+int emaCrossState = 0;
 
 enum CurrentPosition
   {
@@ -96,10 +100,11 @@ CurrentPosition activePosition = C_None;
 int OnInit()
   {
    emaFastHandle = iMA(_Symbol, EMAFastPeriod, emaFast, 0, MODE_EMA, PRICE_CLOSE);
-   emaSlowHandle = iMA(_Symbol, EMASLowPeriod, emaSlow, 0, MODE_EMA, PRICE_CLOSE);
+   emaCrossSlowHandle = iMA(_Symbol, EMACrossPeriod, emaCrossSlow, 0, MODE_EMA, PRICE_CLOSE);
+   emaCrossFastHandle = iMA(_Symbol, EMACrossPeriod, emaCrossFast, 0, MODE_EMA, PRICE_CLOSE);
    macdHandle = iMACD(_Symbol, MACDPeriod, FastEMA, SlowEMA, SignalPeriod, PRICE_CLOSE);
   
-   if(emaFastHandle == INVALID_HANDLE || emaSlowHandle == INVALID_HANDLE || macdHandle == INVALID_HANDLE)
+   if(emaFastHandle == INVALID_HANDLE || emaCrossSlowHandle == INVALID_HANDLE || emaCrossFastHandle == INVALID_HANDLE || macdHandle == INVALID_HANDLE)
      {
       LogMessage("Failed to create EMA/MACD handles");
       return(INIT_FAILED);
@@ -120,18 +125,49 @@ void OnDeinit(const int reason)
   {
    if(emaFastHandle != INVALID_HANDLE)
       IndicatorRelease(emaFastHandle);
-   if(emaSlowHandle != INVALID_HANDLE)
-      IndicatorRelease(emaSlowHandle);
+   if(emaCrossSlowHandle != INVALID_HANDLE)
+      IndicatorRelease(emaCrossSlowHandle);
+   if(emaCrossFastHandle != INVALID_HANDLE)
+      IndicatorRelease(emaCrossFastHandle);
    if(macdHandle != INVALID_HANDLE)
       IndicatorRelease(macdHandle);
   }
-  
+
+void UpdateEMACrossState()
+  {
+   emaCrossState = 0;
+   
+   if (!checkEMACross)
+      return;
+      
+   double fastEMA[3];
+   double slowEMA[3];
+
+   //ema 21
+   if(CopyBuffer(emaCrossFastHandle, 0, 0, 3, fastEMA) < 0)
+      return;
+      
+   //ema 9
+   if(CopyBuffer(emaCrossSlowHandle, 0, 0, 3, slowEMA) < 0)
+      return;
+
+   emaCrossState = 0;
+   
+   if (slowEMA[0] > fastEMA[0])
+   {
+      emaCrossState = 1;
+   }
+   else if (slowEMA[0] < fastEMA[0])
+   {  
+      emaCrossState = -1;
+   }
+  }  
   
 void UpdateMACDState()
 {
    macdState = 0;
    
-   if (checkMACD)
+   if (!checkMACD)
       return;
       
    if(macdHandle == INVALID_HANDLE)
@@ -176,18 +212,14 @@ void UpdateMACDState()
    // MACD > Signal
    //==============================================================
    
-   bool bullishCross = macd[1] > signal[1] && 
-      macd[1] < macdBuyBelow &&
-      signal[1] < macdBuyBelow;
+   bool bullishCross = macd[1] > signal[1];
       
 
    //==============================================================
    // BEARISH CROSS
    //==============================================================
 
-   bool bearishCross = macd[1] < signal[1] && 
-      macd[1] > macdSellAbove &&
-      signal[1] > macdSellAbove;
+   bool bearishCross = macd[1] < signal[1];
       
    //==============================================================
    // STORE STATE
@@ -208,14 +240,14 @@ void UpdateEMAState()
   {
 
    emaState = 0;
-   if(emaFastHandle == INVALID_HANDLE || emaSlowHandle == INVALID_HANDLE)
+   if(emaFastHandle == INVALID_HANDLE)
       return;
 
 
-   double f[3], s[3];
+   double f[3];
 
    ArraySetAsSeries(f, true);
-   ArraySetAsSeries(s, true);
+
 
    if(CopyBuffer(emaFastHandle, 0, 1, 3, f) < 3)
    {
@@ -223,43 +255,14 @@ void UpdateEMAState()
       return;
    }
 
-   if(CopyBuffer(emaSlowHandle, 0, 1, 3, s) < 3)
-   {
-      LogMessage("ERROR: Cannot read EMA Slow line");
-      return;
-   }
-
    double askPrice = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
    double bidPrice = SymbolInfoDouble(_Symbol, SYMBOL_BID);
    
-   bool bullish = false;
-   bool bearish = false;
-  
-   if (checkEMAFast && checkEMASlow)
-   {
-      bullish =  askPrice > f[0] && askPrice > s[0];
-      bearish = bidPrice < f[0] && bidPrice < s[0];
-   }
-   else if (checkEMAFast)
-   {
-      bullish =  askPrice > f[0];
-      bearish = bidPrice < f[0];
-   }
-   else if (checkEMASlow)
-   {
-      bullish =  askPrice > s[0];
-      bearish = bidPrice < s[0];
-   }
-   else
-   {
-      return;
-   }
-   
-   if (bullish)
+   if (askPrice > f[0])
    {
       emaState = 1;
    }
-   if (bearish)
+   if (bidPrice < f[0])
    {
       emaState = -1;
    }
@@ -667,9 +670,9 @@ void ManageTrailingStop()
                return;
             }
          }
-         
-         UpdateEMAState();
+         UpdateEMACrossState();
          UpdateMACDState();
+         UpdateEMAState();
          
          CheckForSignal();
      }
@@ -683,32 +686,27 @@ void CheckForSignal()
    bool isBuy = false;
    bool isSell = false;
    
-   if (checkMACD && checkEMASlow && checkEMAFast)
+   if (checkEMACross && checkMACD)
    {
-      if (macdState == 1 && emaState == 1) isBuy  = true;
-      if (macdState == -1 && emaState == -1) isSell = true;
+      if (macdState == 1 && emaCrossState == 1 && emaState == 1) isBuy = true;
+      if (macdState == -1 && emaCrossState == -1 && emaState == -1) isSell = true;
    }
-   else if (checkMACD && checkEMASlow)
+   else if (checkEMACross)
    {
-      if (macdState == 1 && emaState == 1) isBuy  = true;
-      if (macdState == -1 && emaState == -1) isSell = true;
-   }
-   else if (checkMACD && checkEMAFast)
-   {
-      if (macdState == 1 && emaState == 1) isBuy  = true;
-      if (macdState == -1 && emaState == -1) isSell = true;
+      if (emaCrossState == 1 && emaState == 1) isBuy = true;
+      if (emaCrossState == -1 && emaState == -1) isSell = true;
    }
    else if (checkMACD)
    {
-      if (macdState == 1) isBuy  = true;
-      if (macdState == -1) isSell = true;
+      if (macdState == 1 && emaState == 1) isBuy = true;
+      if (macdState == -1 && emaState == -1) isSell = true;
    }
-   else if (checkEMAFast || checkEMASlow)
+   else
    {
-      if (emaState == 1) isBuy  = true;
+      if (emaState == 1) isBuy = true;
       if (emaState == -1) isSell = true;
    }
-   
+      
    if (!hasPosition) activePosition = C_None;
    
    if (isBuy && activePosition != C_Buy)
