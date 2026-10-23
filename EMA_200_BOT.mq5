@@ -5,7 +5,7 @@
 CTrade trade;
 
 
-input group "=== Version: 23 Oct 2026  ==="
+input group "=== Version: 23 Oct 2026  12:08pm ==="
 
 input group "=== STRATEGY INDICATOR ==="
 input ENUM_TIMEFRAMES EMAFastPeriod = PERIOD_M3;               //EMA TF
@@ -686,26 +686,21 @@ void CheckForSignal()
    bool isBuy = false;
    bool isSell = false;
    
-   if (checkEMACross && checkMACD)
+   if (emaState == 1) isBuy = true;
+   if (emaState == -1) isSell = true;
+   
+   if (checkEMACross)
    {
-      if (macdState == 1 && emaCrossState == 1 && emaState == 1) isBuy = true;
-      if (macdState == -1 && emaCrossState == -1 && emaState == -1) isSell = true;
+      if (emaCrossState != 1 && isBuy) isBuy = false;
+      if (emaCrossState != -1 && isSell) isSell = false;
    }
-   else if (checkEMACross)
+   if (checkMACD)
    {
-      if (emaCrossState == 1 && emaState == 1) isBuy = true;
-      if (emaCrossState == -1 && emaState == -1) isSell = true;
+      if (macdState != 1 && isBuy) isBuy = false;
+      if (macdState != -1 && isSell) isSell = false;
    }
-   else if (checkMACD)
-   {
-      if (macdState == 1 && emaState == 1) isBuy = true;
-      if (macdState == -1 && emaState == -1) isSell = true;
-   }
-   else
-   {
-      if (emaState == 1) isBuy = true;
-      if (emaState == -1) isSell = true;
-   }
+      
+   
       
    if (!hasPosition) activePosition = C_None;
    
@@ -752,3 +747,5 @@ void CheckForSignal()
    }
    
   }
+  
+  
