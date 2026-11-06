@@ -5,11 +5,15 @@
 CTrade trade;
 
 
-input group "=== Version: 23 Oct 2026  12:08pm ==="
+input group "=== Version: 5 Nov 2026  6:33pm ==="
 
 input group "=== STRATEGY INDICATOR ==="
 input ENUM_TIMEFRAMES EMAFastPeriod = PERIOD_M3;               //EMA TF
 input int emaFast=200;                                         //EMA Length
+
+input group "=== STRATEGY Range Filter ==="
+input bool checkRangeZone = false;                            //Check Range Zone
+input int emaRange=9;                                         //EMA Range Zone
 
 input group "=== STRATEGY INDICATOR FILTER ==="
 input bool checkEMACross = false;                              //Check EMA Cross
@@ -17,7 +21,7 @@ input int emaCrossSlow=9;                                      //Slow EMA
 input int emaCrossFast=21;                                     //Fast EMA
 input ENUM_TIMEFRAMES EMACrossPeriod = PERIOD_M3;              //EMA Cross TF
 
-input bool checkMACD = true;                                   //Check MACD
+input bool checkMACD = false;                                   //Check MACD
 input int FastEMA       = 12;                                  //MACD Fast EMA
 input int SlowEMA       = 26;                                  //MACD Slow EMA
 input int SignalPeriod  = 9;                                   //MACD Signal Period
@@ -76,6 +80,7 @@ int emaFastHandle;
 int emaCrossSlowHandle;
 int emaCrossFastHandle;
 int macdHandle;
+int emaRangeHandle;
 
 
 bool g_isNewsDay = false;
@@ -100,11 +105,16 @@ CurrentPosition activePosition = C_None;
 int OnInit()
   {
    emaFastHandle = iMA(_Symbol, EMAFastPeriod, emaFast, 0, MODE_EMA, PRICE_CLOSE);
+   emaRangeHandle = iMA(_Symbol, EMAFastPeriod, emaFast, 0, MODE_EMA, PRICE_CLOSE);
+      
    emaCrossSlowHandle = iMA(_Symbol, EMACrossPeriod, emaCrossSlow, 0, MODE_EMA, PRICE_CLOSE);
    emaCrossFastHandle = iMA(_Symbol, EMACrossPeriod, emaCrossFast, 0, MODE_EMA, PRICE_CLOSE);
    macdHandle = iMACD(_Symbol, MACDPeriod, FastEMA, SlowEMA, SignalPeriod, PRICE_CLOSE);
+
   
-   if(emaFastHandle == INVALID_HANDLE || emaCrossSlowHandle == INVALID_HANDLE || emaCrossFastHandle == INVALID_HANDLE || macdHandle == INVALID_HANDLE)
+   if(emaFastHandle == INVALID_HANDLE || emaCrossSlowHandle == INVALID_HANDLE 
+      || emaCrossFastHandle == INVALID_HANDLE || macdHandle == INVALID_HANDLE
+      || emaRangeHandle == INVALID_HANDLE)
      {
       LogMessage("Failed to create EMA/MACD handles");
       return(INIT_FAILED);
@@ -125,6 +135,8 @@ void OnDeinit(const int reason)
   {
    if(emaFastHandle != INVALID_HANDLE)
       IndicatorRelease(emaFastHandle);
+   if(emaRangeHandle != INVALID_HANDLE)
+      IndicatorRelease(emaRangeHandle);
    if(emaCrossSlowHandle != INVALID_HANDLE)
       IndicatorRelease(emaCrossSlowHandle);
    if(emaCrossFastHandle != INVALID_HANDLE)
@@ -240,18 +252,30 @@ void UpdateEMAState()
   {
 
    emaState = 0;
+   
    if(emaFastHandle == INVALID_HANDLE)
       return;
-
+   
+   if (checkRangeZone)
+      if (emaRangeHandle == INVALID_HANDLE)
+         return;
 
    double f[3];
-
    ArraySetAsSeries(f, true);
+   
+   double r[3];
+   ArraySetAsSeries(r, true);
 
 
    if(CopyBuffer(emaFastHandle, 0, 1, 3, f) < 3)
    {
       LogMessage("ERROR: Cannot read EMA Fast line");
+      return;
+   }
+   
+   if(CopyBuffer(emaRangeHandle, 0, 1, 3, f) < 3)
+   {
+      LogMessage("ERROR: Cannot read EMA Range Zone line");
       return;
    }
 
@@ -260,11 +284,29 @@ void UpdateEMAState()
    
    if (askPrice > f[0])
    {
-      emaState = 1;
+      if (checkRangeZone)
+      {
+         // should be between emaFast and emaRange
+         if (askPrice < r[0])
+            emaState = 1;
+      }
+      else
+      {
+         emaState = 1;
+      }
    }
    if (bidPrice < f[0])
    {
-      emaState = -1;
+      if (checkRangeZone)
+      {
+         // should be between emaFast and emaRange
+         if (bidPrice > r[0])
+            emaState = -1;
+      }
+      else
+      {
+         emaState = -1;
+      }
    }
   }
   
@@ -546,7 +588,26 @@ bool IsNewsDay()
    return false;
 }
 
+long GetActivePosition()
+{
+   long type;
+   
+   for (int j = PositionsTotal() - 1; j>= 0; j--)
+   {
+ 
+      ulong ticket = PositionGetTicket(j);
+   
+      if(ticket == 0)
+         continue;
 
+      if(PositionGetInteger(POSITION_MAGIC) != magicNumber)
+         continue;
+         
+       return PositionGetInteger(POSITION_TYPE);
+      
+    }
+    return type;
+} 
 //+------------------------------------------------------------------+
 //|                                                                  |
 //+------------------------------------------------------------------+
@@ -699,9 +760,16 @@ void CheckForSignal()
       if (macdState != 1 && isBuy) isBuy = false;
       if (macdState != -1 && isSell) isSell = false;
    }
-      
    
-      
+   if (hasPosition && activePosition == C_None)
+   {
+      long activeType = GetActivePosition();
+      if(activeType == POSITION_TYPE_BUY)   
+         {activePosition = C_Buy;}
+      else
+         {activePosition = C_Sell;}
+   }
+   
    if (!hasPosition) activePosition = C_None;
    
    if (isBuy && activePosition != C_Buy)
