@@ -5,7 +5,7 @@
 CTrade trade;
 
 
-input group "=== Version: 5 Nov 2026  6:33pm ==="
+input group "=== Version: 6 Nov 2026  1:36pm ==="
 
 input group "=== STRATEGY INDICATOR ==="
 input ENUM_TIMEFRAMES EMAFastPeriod = PERIOD_M3;               //EMA TF
@@ -105,7 +105,7 @@ CurrentPosition activePosition = C_None;
 int OnInit()
   {
    emaFastHandle = iMA(_Symbol, EMAFastPeriod, emaFast, 0, MODE_EMA, PRICE_CLOSE);
-   emaRangeHandle = iMA(_Symbol, EMAFastPeriod, emaFast, 0, MODE_EMA, PRICE_CLOSE);
+   emaRangeHandle = iMA(_Symbol, EMAFastPeriod, emaRange, 0, MODE_EMA, PRICE_CLOSE);
       
    emaCrossSlowHandle = iMA(_Symbol, EMACrossPeriod, emaCrossSlow, 0, MODE_EMA, PRICE_CLOSE);
    emaCrossFastHandle = iMA(_Symbol, EMACrossPeriod, emaCrossFast, 0, MODE_EMA, PRICE_CLOSE);
@@ -273,7 +273,7 @@ void UpdateEMAState()
       return;
    }
    
-   if(CopyBuffer(emaRangeHandle, 0, 1, 3, f) < 3)
+   if(CopyBuffer(emaRangeHandle, 0, 1, 3, r) < 3)
    {
       LogMessage("ERROR: Cannot read EMA Range Zone line");
       return;
@@ -288,7 +288,14 @@ void UpdateEMAState()
       {
          // should be between emaFast and emaRange
          if (askPrice < r[0])
-            emaState = 1;
+            {
+               emaState = 1;
+            }
+         LogMessage("--------------");
+         LogMessage("AskPrice: " + askPrice);
+         LogMessage("EMA 200: " + f[0]);
+         LogMessage("EMA Range: " + r[0]);
+         LogMessage("--------------");
       }
       else
       {
@@ -301,7 +308,14 @@ void UpdateEMAState()
       {
          // should be between emaFast and emaRange
          if (bidPrice > r[0])
-            emaState = -1;
+            {
+               emaState = -1;
+            }
+         LogMessage("--------------");
+         LogMessage("BidPrice: " + askPrice);
+         LogMessage("EMA 200: " + f[0]);
+         LogMessage("EMA Range: " + r[0]);
+         LogMessage("--------------");
       }
       else
       {
