@@ -291,11 +291,6 @@ void UpdateEMAState()
             {
                emaState = 1;
             }
-         LogMessage("--------------");
-         LogMessage("AskPrice: " + askPrice);
-         LogMessage("EMA 200: " + f[0]);
-         LogMessage("EMA Range: " + r[0]);
-         LogMessage("--------------");
       }
       else
       {
@@ -311,11 +306,6 @@ void UpdateEMAState()
             {
                emaState = -1;
             }
-         LogMessage("--------------");
-         LogMessage("BidPrice: " + askPrice);
-         LogMessage("EMA 200: " + f[0]);
-         LogMessage("EMA Range: " + r[0]);
-         LogMessage("--------------");
       }
       else
       {
